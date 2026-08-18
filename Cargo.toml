@@ -1,6 +1,14 @@
 [workspace]
 resolver = "3"
-members = ["crates/ofr-device", "crates/ofr-image", "crates/ofr-cli"]
+members = [
+    "crates/ofr-device",
+    "crates/ofr-image",
+    "crates/ofr-fs",
+    "crates/ofr-fat",
+    "crates/ofr-exfat",
+    "crates/ofr-testfs",
+    "crates/ofr-cli",
+]
 
 [workspace.package]
 version = "0.0.1"
@@ -11,6 +19,10 @@ license = "MIT"
 [workspace.dependencies]
 ofr-device = { path = "crates/ofr-device" }
 ofr-image = { path = "crates/ofr-image" }
+ofr-fs = { path = "crates/ofr-fs" }
+ofr-fat = { path = "crates/ofr-fat" }
+ofr-exfat = { path = "crates/ofr-exfat" }
+ofr-testfs = { path = "crates/ofr-testfs" }
 
 thiserror = "2"
 tracing = "0.1"

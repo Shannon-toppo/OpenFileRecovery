@@ -31,6 +31,7 @@ mod error;
 mod file;
 #[cfg(feature = "mock")]
 mod mock;
+mod slice;
 mod sys;
 
 pub use device::{Device, DeviceInfo, DeviceKind};
@@ -38,6 +39,7 @@ pub use error::{DeviceError, Result};
 pub use file::{DEFAULT_BLOCK_SIZE, FileDevice};
 #[cfg(feature = "mock")]
 pub use mock::{MockDevice, MockDeviceBuilder, MockStats};
+pub use slice::SliceDevice;
 
 #[cfg(target_os = "macos")]
 pub use sys::macos::MacDevice;

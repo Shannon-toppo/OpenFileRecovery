@@ -278,7 +278,12 @@ dependencies = [
  "clap",
  "ctrlc",
  "ofr-device",
+ "ofr-exfat",
+ "ofr-fat",
+ "ofr-fs",
  "ofr-image",
+ "ofr-testfs",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]
@@ -295,6 +300,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "ofr-exfat"
+version = "0.0.1"
+dependencies = [
+ "ofr-device",
+ "ofr-fs",
+ "ofr-testfs",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "ofr-fat"
+version = "0.0.1"
+dependencies = [
+ "ofr-device",
+ "ofr-fs",
+ "ofr-testfs",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "ofr-fs"
+version = "0.0.1"
+dependencies = [
+ "ofr-device",
+ "tempfile",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "ofr-image"
 version = "0.0.1"
 dependencies = [
@@ -303,6 +340,10 @@ dependencies = [
  "thiserror",
  "tracing",
 ]
+
+[[package]]
+name = "ofr-testfs"
+version = "0.0.1"
 
 [[package]]
 name = "once_cell"

@@ -1,11 +1,13 @@
 //! Open File Recovery の CLI。
 //!
 //! GUI より先に全機能をここで動かして検証する(PLAN.md 8章)。
-//! Phase 1 の時点で使えるのはデバイス列挙とイメージングの 2 つ。
+//! Phase 2 の時点で使えるのは列挙・イメージング・解析・復元の 4 つ。
 //!
 //! ```text
 //! ofr list
 //! sudo ofr image /dev/disk4 /Volumes/Backup/usb.img
+//! ofr scan /Volumes/Backup/usb.img
+//! ofr restore /Volumes/Backup/usb.img /Volumes/Backup/recovered
 //! ```
 //!
 //! 生デバイスの読み込みには管理者 / root 権限が必要。
@@ -16,9 +18,13 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+mod filter;
 mod format;
 mod image;
 mod list;
+mod restore;
+mod scan;
+mod source;
 
 /// 終了コード: 全域を取得できた。
 const EXIT_OK: u8 = 0;
@@ -26,6 +32,17 @@ const EXIT_OK: u8 = 0;
 const EXIT_INCOMPLETE: u8 = 1;
 /// 終了コード: 続行できないエラー。
 const EXIT_ERROR: u8 = 2;
+
+/// 何も見つからなかったときに出す案内。
+const EXIT_HINT_EMPTY: &str = "条件に合う項目が見つからない。\n    フォーマット済みのデバイスなら孤立クラスタ走査 (既定で有効) が要る。\n    ファイルシステム自体が壊れている場合は、Phase 3 のカービングが必要になる (未実装)。";
+
+/// コマンドの実行結果。終了コードに対応する。
+pub enum Outcome {
+    /// やりたいことが全部できた。
+    Complete,
+    /// 一部しかできなかった、または中断した。
+    Incomplete,
+}
 
 #[derive(Debug, Parser)]
 #[command(
@@ -56,6 +73,12 @@ enum Command {
 
     /// デバイスを raw イメージへ吸い出す(壊れかけメディア対応)。
     Image(image::ImageArgs),
+
+    /// ファイルシステムを解析して、復元できる項目を一覧する。
+    Scan(scan::ScanArgs),
+
+    /// 見つかった項目を復元先フォルダへ書き出す。
+    Restore(restore::RestoreArgs),
 }
 
 fn main() -> ExitCode {
@@ -64,14 +87,16 @@ fn main() -> ExitCode {
 
     let result = match cli.command {
         Command::List { json } => list::run(json)
-            .map(|()| image::Outcome::Complete)
+            .map(|()| Outcome::Complete)
             .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) }),
         Command::Image(args) => image::run(args),
+        Command::Scan(args) => scan::run(args),
+        Command::Restore(args) => restore::run(args),
     };
 
     match result {
-        Ok(image::Outcome::Complete) => ExitCode::from(EXIT_OK),
-        Ok(image::Outcome::Incomplete) => ExitCode::from(EXIT_INCOMPLETE),
+        Ok(Outcome::Complete) => ExitCode::from(EXIT_OK),
+        Ok(Outcome::Incomplete) => ExitCode::from(EXIT_INCOMPLETE),
         Err(e) => {
             eprintln!("エラー: {e}");
             let mut source = e.source();
@@ -85,10 +110,14 @@ fn main() -> ExitCode {
 }
 
 fn init_tracing(verbose: u8) {
-    // クレート名は ofr_device / ofr_image / ofr_cli になる。
+    // クレート名は ofr_device / ofr_image / ofr_fs / ofr_fat / ofr_exfat / ofr_cli になる。
     let level = match verbose {
-        0 => "warn,ofr_cli=info,ofr_image=info,ofr_device=info",
-        1 => "info,ofr_cli=debug,ofr_image=debug,ofr_device=debug",
+        0 => {
+            "warn,ofr_cli=info,ofr_image=info,ofr_device=info,ofr_fs=info,ofr_fat=info,ofr_exfat=info"
+        }
+        1 => {
+            "info,ofr_cli=debug,ofr_image=debug,ofr_device=debug,ofr_fs=debug,ofr_fat=debug,ofr_exfat=debug"
+        }
         _ => "trace",
     };
     let filter = tracing_subscriber::EnvFilter::try_from_env("OFR_LOG")

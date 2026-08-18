@@ -1,0 +1,15 @@
+[package]
+name = "ofr-testfs"
+description = "Open File Recovery: テスト用の FAT32 / exFAT イメージ生成 (開発専用)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "ofr-testfs"
+path = "src/main.rs"
+
+[lints]
+workspace = true

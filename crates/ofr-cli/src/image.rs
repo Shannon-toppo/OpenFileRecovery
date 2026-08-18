@@ -3,13 +3,15 @@
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use ofr_device::{Device, DeviceInfo, FileDevice};
+use ofr_device::{Device, DeviceInfo};
 use ofr_image::{ImageOptions, ImageSummary, Imager};
 
+use crate::Outcome;
 use crate::format;
+use crate::source::{self, install_cancel_handler, parse_size, same_device};
 
 /// `ofr image` の引数。
 #[derive(Debug, clap::Args)]
@@ -61,21 +63,13 @@ pub struct ImageArgs {
     pub force: bool,
 }
 
-/// 実行結果。
-pub enum Outcome {
-    /// 全域を取得できた。
-    Complete,
-    /// 読めない領域が残った、または中断された。
-    Incomplete,
-}
-
 /// イメージングを実行する。
 pub fn run(args: ImageArgs) -> Result<Outcome, Box<dyn std::error::Error>> {
     // 起動ディスクの判定は列挙情報だけでできる。デバイスを開く前に弾く
     // (開くには管理者権限が要るので、権限エラーで理由が隠れないように)。
-    check_source_selectable(&args.source)?;
+    source::check_source_selectable(&args.source)?;
 
-    let device = open_source(&args.source)?;
+    let device = source::open_source(&args.source)?;
     let info = device.info().clone();
     check_safety(&info, &args)?;
 
@@ -120,7 +114,10 @@ pub fn run(args: ImageArgs) -> Result<Outcome, Box<dyn std::error::Error>> {
     println!();
 
     let cancel = Arc::new(AtomicBool::new(false));
-    install_cancel_handler(Arc::clone(&cancel));
+    install_cancel_handler(
+        Arc::clone(&cancel),
+        "中断する。mapfile を書き出すので、同じコマンドで再開できる。",
+    );
 
     let summary = Imager::new(device.as_ref())
         .with_options(options)
@@ -138,33 +135,6 @@ pub fn run(args: ImageArgs) -> Result<Outcome, Box<dyn std::error::Error>> {
     } else {
         Outcome::Incomplete
     })
-}
-
-/// 復旧元を開く。既存のファイルならイメージとして、それ以外はデバイス ID として扱う。
-fn open_source(source: &str) -> Result<Box<dyn Device>, Box<dyn std::error::Error>> {
-    let path = Path::new(source);
-    if path.is_file() {
-        Ok(Box::new(FileDevice::open(path)?))
-    } else {
-        Ok(ofr_device::open_device(source)?)
-    }
-}
-
-/// 復旧元として選んでよいデバイスか、列挙情報だけで確かめる(PLAN.md 6章 3項)。
-fn check_source_selectable(source: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if Path::new(source).is_file() {
-        return Ok(()); // イメージファイルは対象外。
-    }
-    let Ok(devices) = ofr_device::list_devices() else {
-        return Ok(()); // 列挙できない環境では、開いたあとの判定に任せる。
-    };
-    let Some(info) = devices.iter().find(|d| same_device(&d.id, source)) else {
-        return Ok(());
-    };
-    if info.is_system_disk {
-        return Err(format!("{} は起動ディスクなので復旧元にできない", info.id).into());
-    }
-    Ok(())
 }
 
 /// 安全原則(PLAN.md 6章)のチェック。
@@ -194,19 +164,6 @@ fn check_safety(info: &DeviceInfo, args: &ImageArgs) -> Result<(), Box<dyn std::
     Ok(())
 }
 
-/// デバイス ID の同一判定。`/dev/disk4` と `disk4` のような表記揺れを吸収する。
-fn same_device(a: &str, b: &str) -> bool {
-    fn key(s: &str) -> String {
-        s.trim_start_matches(r"\\.\")
-            .rsplit('/')
-            .next()
-            .unwrap_or(s)
-            .trim_start_matches('r')
-            .to_ascii_lowercase()
-    }
-    key(a) == key(b)
-}
-
 fn build_options(args: &ImageArgs, tty: bool) -> Result<ImageOptions, Box<dyn std::error::Error>> {
     let sector_size = match &args.sector_size {
         Some(s) => Some(u32::try_from(parse_size(s)?)?),
@@ -227,34 +184,6 @@ fn build_options(args: &ImageArgs, tty: bool) -> Result<ImageOptions, Box<dyn st
         },
         ..ImageOptions::default()
     })
-}
-
-/// `4096` / `64K` / `1M` / `2G` を受け付ける。
-fn parse_size(text: &str) -> Result<u64, String> {
-    let t = text.trim();
-    let (digits, mult) = match t.chars().last() {
-        Some('K') | Some('k') => (&t[..t.len() - 1], 1024),
-        Some('M') | Some('m') => (&t[..t.len() - 1], 1024 * 1024),
-        Some('G') | Some('g') => (&t[..t.len() - 1], 1024 * 1024 * 1024),
-        _ => (t, 1),
-    };
-    let n: u64 = digits
-        .trim()
-        .parse()
-        .map_err(|_| format!("サイズとして読めない: {text}"))?;
-    n.checked_mul(mult)
-        .filter(|v| *v > 0)
-        .ok_or_else(|| format!("サイズが範囲外: {text}"))
-}
-
-fn install_cancel_handler(cancel: Arc<AtomicBool>) {
-    let result = ctrlc::set_handler(move || {
-        eprintln!("\n中断する。mapfile を書き出すので、同じコマンドで再開できる。");
-        cancel.store(true, Ordering::Relaxed);
-    });
-    if let Err(e) = result {
-        tracing::warn!(error = %e, "Ctrl-C ハンドラを登録できなかった");
-    }
 }
 
 /// 進捗表示。端末なら 1 行を書き換え、そうでなければ 1 行ずつ追記する。
