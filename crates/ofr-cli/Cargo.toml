@@ -1,0 +1,22 @@
+[package]
+name = "ofr-cli"
+description = "Open File Recovery: 開発・デバッグ・ヘッドレス用 CLI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ofr"
+path = "src/main.rs"
+
+[dependencies]
+ofr-device.workspace = true
+ofr-image.workspace = true
+clap = { version = "4", features = ["derive"] }
+ctrlc = "3"
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+
+[lints]
+workspace = true

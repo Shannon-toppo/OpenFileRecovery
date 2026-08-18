@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ofr-device"]
+members = ["crates/ofr-device", "crates/ofr-image", "crates/ofr-cli"]
 
 [workspace.package]
 version = "0.0.1"
@@ -10,6 +10,7 @@ license = "MIT"
 
 [workspace.dependencies]
 ofr-device = { path = "crates/ofr-device" }
+ofr-image = { path = "crates/ofr-image" }
 
 thiserror = "2"
 tracing = "0.1"

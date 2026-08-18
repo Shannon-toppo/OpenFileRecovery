@@ -10,7 +10,8 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  # Phase 0 の完了条件: モックに対するユニットテストが両OSで通ること。
+  # Phase 0/1 の完了条件: モックに対するユニットテストが両OSで通ること。
+  # 実デバイスを使うテストは CI に置けないので、手動チェックリスト (README) で確認する。
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -19,7 +20,7 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: build
@@ -30,10 +31,15 @@ jobs:
         run: cargo build --workspace --no-default-features
 
   lint:
-    name: fmt + clippy
-    runs-on: macos-latest
+    name: fmt + clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # OS 別のデバイス実装があるので、clippy も両方で回す。
+        os: [windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
