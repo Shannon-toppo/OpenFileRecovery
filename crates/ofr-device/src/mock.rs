@@ -6,6 +6,8 @@
 //! - **恒久不良**: その範囲に触れる読み込みは常に失敗する。
 //! - **一過性不良**: N 回失敗したあと成功する(USB コントローラの一時的な固まり)。
 //! - **低速領域**: 読めるが遅い(Copy pass の速度閾値スキップの検証用)。
+//! - **ハンドル固着**: [`Device::reopen`] を呼ぶまで失敗し続ける
+//!   (USB コントローラが固まり、開き直すと復帰するケース)。
 //! - **未整列拒否**: セクタ境界に整列していない読み込みを拒否する(Windows 非バッファIO 相当)。
 //!
 //! 読み込みの記録(オフセットと長さの列)も取れるので、
@@ -13,7 +15,7 @@
 
 use std::ops::Range;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
 use crate::align::is_aligned;
@@ -32,6 +34,8 @@ enum FaultKind {
     },
     /// 成功するが遅い。
     Slow { delay: Duration },
+    /// [`Device::reopen`] が呼ばれるまで失敗し続ける。
+    UntilReopen { healed: AtomicBool },
 }
 
 #[derive(Debug)]
@@ -49,6 +53,8 @@ pub struct MockStats {
     pub bytes_read: u64,
     /// エラーを返した回数。
     pub failed_reads: u64,
+    /// [`Device::reopen`] が呼ばれた回数。
+    pub reopen_calls: u64,
 }
 
 /// テスト用の合成デバイス。
@@ -63,6 +69,7 @@ pub struct MockDevice {
     read_calls: AtomicU64,
     bytes_read: AtomicU64,
     failed_reads: AtomicU64,
+    reopen_calls: AtomicU64,
     read_log: Option<Mutex<Vec<(u64, usize)>>>,
 }
 
@@ -103,6 +110,7 @@ impl MockDevice {
             read_calls: self.read_calls.load(Ordering::Relaxed),
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
             failed_reads: self.failed_reads.load(Ordering::Relaxed),
+            reopen_calls: self.reopen_calls.load(Ordering::Relaxed),
         }
     }
 
@@ -111,6 +119,7 @@ impl MockDevice {
         self.read_calls.store(0, Ordering::Relaxed);
         self.bytes_read.store(0, Ordering::Relaxed);
         self.failed_reads.store(0, Ordering::Relaxed);
+        self.reopen_calls.store(0, Ordering::Relaxed);
     }
 
     /// 記録された読み込み `(offset, len)` の列。
@@ -203,6 +212,12 @@ impl Device for MockDevice {
                         return Err(DeviceError::Media { offset, len: want });
                     }
                 }
+                FaultKind::UntilReopen { healed } => {
+                    if !healed.load(Ordering::Relaxed) {
+                        self.failed_reads.fetch_add(1, Ordering::Relaxed);
+                        return Err(DeviceError::Media { offset, len: want });
+                    }
+                }
                 FaultKind::Slow { .. } => {}
             }
         }
@@ -223,6 +238,16 @@ impl Device for MockDevice {
 
     fn info(&self) -> &DeviceInfo {
         &self.info
+    }
+
+    fn reopen(&self) -> Result<bool> {
+        self.reopen_calls.fetch_add(1, Ordering::Relaxed);
+        for fault in &self.faults {
+            if let FaultKind::UntilReopen { healed } = &fault.kind {
+                healed.store(true, Ordering::Relaxed);
+            }
+        }
+        Ok(true)
     }
 }
 
@@ -312,6 +337,19 @@ impl MockDeviceBuilder {
         self
     }
 
+    /// [`Device::reopen`] を呼ぶまで失敗し続ける領域。
+    ///
+    /// USB コントローラが一時的に固まり、ハンドルを開き直すと復帰する挙動を模す。
+    pub fn stuck_until_reopen(mut self, offset: u64, len: u64) -> Self {
+        self.faults.push(Fault {
+            range: offset..offset + len,
+            kind: FaultKind::UntilReopen {
+                healed: AtomicBool::new(false),
+            },
+        });
+        self
+    }
+
     /// 全読み込みに一律で挟む遅延。
     pub fn read_delay(mut self, delay: Duration) -> Self {
         self.read_delay = Some(delay);
@@ -382,6 +420,7 @@ impl MockDeviceBuilder {
             read_calls: AtomicU64::new(0),
             bytes_read: AtomicU64::new(0),
             failed_reads: AtomicU64::new(0),
+            reopen_calls: AtomicU64::new(0),
             read_log: self.record_reads.then(|| Mutex::new(Vec::new())),
         }
     }

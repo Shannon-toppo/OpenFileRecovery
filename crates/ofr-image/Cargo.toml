@@ -1,0 +1,19 @@
+[package]
+name = "ofr-image"
+description = "Open File Recovery: ddrescue 方式のイメージングエンジン"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ofr-device.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+ofr-device = { workspace = true, features = ["mock"] }
+tempfile = "3"
+
+[lints]
+workspace = true

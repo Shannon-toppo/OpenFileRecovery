@@ -143,6 +143,15 @@ pub trait Device: Send + Sync {
         self.read_exact_at(offset, &mut buf)?;
         Ok(buf)
     }
+
+    /// デバイスハンドルを開き直す。開き直したなら `true`。
+    ///
+    /// USB コントローラが一時的に固まり、ハンドルを作り直すと復帰するケースへの
+    /// 対処(PLAN.md 5.2 のリトライ戦略)。開き直しに意味がないバックエンド
+    /// (イメージファイル・モック)は既定実装のまま `Ok(false)` を返す。
+    fn reopen(&self) -> Result<bool> {
+        Ok(false)
+    }
 }
 
 impl<D: Device + ?Sized> Device for &D {
@@ -157,6 +166,9 @@ impl<D: Device + ?Sized> Device for &D {
     }
     fn info(&self) -> &DeviceInfo {
         (**self).info()
+    }
+    fn reopen(&self) -> Result<bool> {
+        (**self).reopen()
     }
 }
 
@@ -173,6 +185,9 @@ impl<D: Device + ?Sized> Device for Box<D> {
     fn info(&self) -> &DeviceInfo {
         (**self).info()
     }
+    fn reopen(&self) -> Result<bool> {
+        (**self).reopen()
+    }
 }
 
 impl<D: Device + ?Sized> Device for std::sync::Arc<D> {
@@ -187,6 +202,9 @@ impl<D: Device + ?Sized> Device for std::sync::Arc<D> {
     }
     fn info(&self) -> &DeviceInfo {
         (**self).info()
+    }
+    fn reopen(&self) -> Result<bool> {
+        (**self).reopen()
     }
 }
 
