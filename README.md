@@ -74,7 +74,25 @@ CI (GitHub Actions) は windows-latest と macos-latest でテストと lint を
 
 ### 実機での手動確認 (CI で回せない項目)
 
-1. `ofr list` に USB メモリ / SD カードが出て、容量と種別が正しいこと。
-2. 起動ディスクが「選択不可」と表示され、`ofr image` が拒否すること。
-3. `sudo ofr image <デバイス> <別ディスク上の出力>` が完走し、mapfile が全域 `+` になること。
-4. 途中で Ctrl-C して再実行すると、取得済み領域を読み直さずに再開すること。
+1. `ofr list` に USB メモリ / SD カードが出て、容量と種別が OS の表示 (`diskutil list` /
+   `Get-Disk`) と一致すること。ここは管理者権限なしで動くこと。
+2. 起動ディスクが「選択不可」と表示され、`ofr image` が終了コード 2 で拒否すること。
+3. イメージングが完走し (終了コード 0)、mapfile が全域 `+` の 1 ブロックになり、
+   イメージ長がデバイスサイズと一致すること。生デバイスとイメージを数か所で突き合わせること。
+4. 途中で Ctrl-C して再実行すると、`mapfile から再開する rescued=...` が中断時点の
+   取得バイト数と一致し、取得済み領域を読み直さずに再開すること。
+
+```bash
+# macOS (root 権限が要る)
+sudo ofr image /dev/disk4 /Volumes/Backup/usb.img
+```
+
+```powershell
+# Windows (管理者権限の PowerShell で)
+.\ofr.exe image '\\.\PhysicalDrive2' C:\usbtest\usb.img
+```
+
+出力先は必ず復旧元と別のディスクにすること (同一デバイスならエラーになる)。
+
+Phase 1 時点での確認済み: macOS 26 / KIOXIA TransMemory 57.7 GiB (163 MiB/s で完走)、
+Windows / USB メモリ。
