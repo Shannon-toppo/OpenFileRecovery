@@ -1,0 +1,21 @@
+[package]
+name = "ofr-device"
+description = "Open File Recovery: 読み取り専用の生デバイスアクセス抽象"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["mock"]
+# エラー注入用のテストデバイス。上位クレートのユニットテストで使う。
+mock = []
+
+[dependencies]
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

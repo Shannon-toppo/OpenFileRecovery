@@ -1,0 +1,9 @@
+/target
+**/*.rs.bk
+
+# テストイメージは生成物なので追跡しない (PLAN.md 3章)
+/testdata/out/
+*.img
+*.img.map
+
+.DS_Store
