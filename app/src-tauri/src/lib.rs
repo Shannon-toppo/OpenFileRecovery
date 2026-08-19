@@ -55,6 +55,21 @@ fn privileges(core: State<'_, Arc<Core>>) -> PrivilegeDto {
     core.privileges()
 }
 
+/// フルディスクアクセスの設定画面を開く(macOS)。
+///
+/// root でも TCC に止められている場合、権限を上げ直しても直らない。
+/// 利用者がその場で許可できるように、設定画面まで連れて行く。
+#[tauri::command]
+fn open_privacy_settings(app: AppHandle) -> ApiResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(ofr_core::FULL_DISK_ACCESS_SETTINGS, None::<String>)
+        .map_err(|e| ApiError {
+            code: ofr_core::ErrorCode::Other,
+            message: format!("設定画面を開けなかった: {e}"),
+        })
+}
+
 /// 管理者権限で起動し直す(macOS)。成功したらこのプロセスは終了する。
 #[tauri::command]
 fn relaunch_elevated(app: AppHandle) -> ApiResult<()> {
@@ -138,6 +153,7 @@ pub fn run() {
             list_devices,
             privileges,
             relaunch_elevated,
+            open_privacy_settings,
             start_job,
             cancel_job,
             entries,

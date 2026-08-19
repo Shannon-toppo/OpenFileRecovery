@@ -278,7 +278,10 @@
     "io": "Writing failed",
     "other": "Error",
     "noFilesystemHint": "The file system may be destroyed. Searching by file format still finds the contents (but not the names).",
-    "sameDeviceHint": "Choose another disk. Writing to the source device overwrites the data you want back."
+    "sameDeviceHint": "Choose another disk. Writing to the source device overwrites the data you want back.",
+    "fullDiskAccess": "Blocked by macOS Full Disk Access",
+    "fullDiskAccessHint": "Administrator rights do not fix this. To read a raw disk, add this app under System Settings > Privacy & Security > Full Disk Access, then restart the app.",
+    "openSettings": "Open System Settings"
   },
   "safety": {
     "readOnly": "Never writes to the source device",

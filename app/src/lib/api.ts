@@ -43,6 +43,9 @@ export const privileges = () => call<PrivilegeDto>("privileges");
 /** 管理者権限で起動し直す (macOS)。成功するとこのプロセスは終了する。 */
 export const relaunchElevated = () => call<void>("relaunch_elevated");
 
+/** フルディスクアクセスの設定画面を開く (macOS)。 */
+export const openPrivacySettings = () => call<void>("open_privacy_settings");
+
 /** ジョブを始める。戻り値はジョブ ID。 */
 export const startJob = (request: JobRequest) => call<number>("start_job", { request });
 
