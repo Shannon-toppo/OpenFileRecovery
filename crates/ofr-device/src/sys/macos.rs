@@ -217,6 +217,14 @@ fn open_read_only(path: &Path) -> Result<File> {
         Some(libc::EBUSY) => DeviceError::Busy {
             path: path.to_path_buf(),
         },
+        // root なのに EPERM が返るのは TCC(フルディスクアクセス)による拒否。
+        // デバイスノードは crw-r----- root:operator なので、POSIX 権限の話なら
+        // root には EPERM ではなく成功が返る。権限を上げ直しても直らない別物なので、
+        // 「管理者で実行し直せ」ではない案内を出せるように分けておく。
+        Some(libc::EPERM) if is_root() => DeviceError::OsProtected {
+            path: path.to_path_buf(),
+            source: e,
+        },
         Some(libc::EACCES) | Some(libc::EPERM) => DeviceError::PermissionDenied {
             path: path.to_path_buf(),
             source: e,
@@ -228,6 +236,12 @@ fn open_read_only(path: &Path) -> Result<File> {
             source: e,
         },
     })
+}
+
+/// root で動いているか。
+fn is_root() -> bool {
+    // SAFETY: geteuid はスレッド安全で、引数も戻り値も単純な整数。
+    unsafe { libc::geteuid() == 0 }
 }
 
 /// 1 回の読み込みの上限を決める。

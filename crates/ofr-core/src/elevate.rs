@@ -19,6 +19,11 @@ use serde::Serialize;
 
 use crate::error::{CoreError, Result};
 
+/// 昇格して起動し直したときのログの置き場(macOS)。
+///
+/// `osascript` から起動したプロセスは端末に繋がっていないので、ここに残す。
+pub const ELEVATED_LOG: &str = "/tmp/ofr-gui.log";
+
 /// いまの権限。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,9 +100,12 @@ mod sys {
                 "アプリのパスに ' が含まれているので昇格して起動し直せない".to_string(),
             ));
         }
+        // ログは捨てない。ここで起動したプロセスは端末に繋がっていないので、
+        // 捨てると「昇格したのに動かない」ときの手がかりが何も残らなくなる。
         let script = format!(
-            "do shell script \"'{}' >/dev/null 2>&1 &\" with administrator privileges",
-            path.replace('\\', "\\\\").replace('"', "\\\"")
+            "do shell script \"'{}' >>{} 2>&1 &\" with administrator privileges",
+            path.replace('\\', "\\\\").replace('"', "\\\""),
+            super::ELEVATED_LOG
         );
 
         let status = Command::new("/usr/bin/osascript")
@@ -178,6 +186,25 @@ mod sys {
     }
 }
 
+/// フルディスクアクセスの設定画面を開く URL(macOS)。
+///
+/// GUI はこれを開いて、利用者がその場で許可できるようにする。
+pub const FULL_DISK_ACCESS_SETTINGS: &str =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles";
+
+/// root なのに OS の保護で弾かれたときの案内(macOS の TCC)。
+///
+/// 権限昇格では直らない。アプリ自体にフルディスクアクセスを与えるか、
+/// フルディスクアクセスを持つターミナルから CLI を動かすかの二択になる
+/// (PLAN.md 10章)。
+pub fn full_disk_access_hint(source: &str) -> String {
+    format!(
+        "root で動いているが、macOS の保護 (TCC) が {source} への         アクセスを止めている。権限を上げ直しても直らない。
+         「システム設定を開く」からフルディスクアクセスにこのアプリを追加して、         アプリを起動し直すこと。
+         それでも通らない場合は、フルディスクアクセスを持つターミナルから          `sudo ofr image {source} <出力先>` でイメージを取り、そのイメージを開くこと。"
+    )
+}
+
 /// 権限不足のエラーに添える案内(日本語)。
 pub fn permission_hint(source: &str) -> String {
     match platform() {
@@ -200,6 +227,7 @@ impl CoreError {
     pub fn hint(&self, source: &str) -> Option<String> {
         match self.code() {
             crate::ErrorCode::PermissionDenied => Some(permission_hint(source)),
+            crate::ErrorCode::FullDiskAccess => Some(full_disk_access_hint(source)),
             crate::ErrorCode::Busy => Some(format!(
                 "{source} は使用中で開けない。macOS なら「開始前にアンマウントする」を\
                  有効にして実行し直すこと。"

@@ -6,6 +6,7 @@
 
 export type ErrorCode =
   | "permissionDenied"
+  | "fullDiskAccess"
   | "systemDisk"
   | "sameDevice"
   | "busy"
