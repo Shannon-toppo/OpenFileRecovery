@@ -1,0 +1,20 @@
+[package]
+name = "ofr-fat"
+description = "Open File Recovery: FAT32 パーサ (削除復元・孤立クラスタ復元を含む)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ofr-device.workspace = true
+ofr-fs.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+ofr-device = { workspace = true, features = ["mock"] }
+ofr-testfs.workspace = true
+
+[lints]
+workspace = true

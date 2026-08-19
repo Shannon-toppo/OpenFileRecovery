@@ -13,10 +13,18 @@ path = "src/main.rs"
 [dependencies]
 ofr-device.workspace = true
 ofr-image.workspace = true
+ofr-fs.workspace = true
+ofr-fat.workspace = true
+ofr-exfat.workspace = true
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+
+[dev-dependencies]
+ofr-device = { workspace = true, features = ["mock"] }
+ofr-testfs.workspace = true
+tempfile = "3"
 
 [lints]
 workspace = true
