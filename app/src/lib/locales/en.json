@@ -124,7 +124,9 @@
       "nonTried": "Not tried",
       "nonTrimmed": "Not trimmed",
       "nonScraped": "Not scraped"
-    }
+    },
+    "stalled": "Waiting for the device ({secs}s)",
+    "stalledHint": "This is normal for failing media. Wait it out, or stop — everything read so far is kept."
   },
   "image": {
     "title": "Imaging settings",
