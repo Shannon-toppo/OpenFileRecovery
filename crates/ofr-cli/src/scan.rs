@@ -107,10 +107,7 @@ pub fn run(args: ScanArgs) -> Result<Outcome, Box<dyn Error>> {
         eprintln!();
     }
 
-    let filter = Filter {
-        include: args.include.clone(),
-        statuses: args.status.clone(),
-    };
+    let filter = Filter::new(args.include.clone(), &args.status);
     let selected: Vec<&RecoveredEntry> = tree
         .entries()
         .iter()

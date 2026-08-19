@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Open File Recovery",
+  "version": "0.0.1",
+  "identifier": "dev.openfilerecovery.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Open File Recovery",
+        "width": 1160,
+        "height": 820,
+        "minWidth": 940,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis", "dmg", "app"],
+    "category": "Utility",
+    "shortDescription": "USB メモリ / SD カードのデータ復旧",
+    "longDescription": "削除やフォーマットで消えたファイルを探して取り出し、壊れかけたメディアを丸ごと吸い出し、開けなくなったファイルを修復する。復旧元には一切書き込まない。",
+    "copyright": "MIT License",
+    "licenseFile": "../../LICENSE",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    },
+    "windows": {
+      "allowDowngrades": true,
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": ["Japanese", "English"]
+      }
+    }
+  }
+}

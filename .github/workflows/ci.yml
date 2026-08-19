@@ -48,3 +48,40 @@ jobs:
         run: cargo fmt --all -- --check
       - name: clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  # GUI (Phase 6)。コアのワークスペースとは別クレートなので、ここで別に回す。
+  # 実際のインストーラ作成は release ワークフローの仕事で、ここは
+  # 「両 OS でビルドが通り、型が合っているか」までを見る。
+  gui:
+    name: gui (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: npm ci
+        run: npm ci
+      - name: フロントの型チェックとビルド
+        run: npm run build
+      - name: rustfmt
+        working-directory: app/src-tauri
+        run: cargo fmt --all -- --check
+      - name: clippy
+        working-directory: app/src-tauri
+        run: cargo clippy --all-targets -- -D warnings

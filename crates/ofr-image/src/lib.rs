@@ -32,5 +32,5 @@ pub use blocks::{Block, BlockList, BlockStatus};
 pub use error::{ImageError, Result};
 pub use imager::{ImageOptions, Imager};
 pub use mapfile::{CurrentStatus, MapFile};
-pub use progress::{ImageSummary, Pass, Progress, ProgressFn};
+pub use progress::{ImageSummary, MAP_SEGMENTS, Pass, Progress, ProgressFn};
 pub use writer::ImageWriter;

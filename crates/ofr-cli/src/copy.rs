@@ -363,9 +363,7 @@ fn print_summary(report: &CopyReport) {
     }
     if s.partial > 0 || s.failed > 0 {
         println!();
-        println!(
-            "欠けたファイルが開けない場合、Phase 5 の修復モジュールで直せることがある(未実装)。"
-        );
+        println!("欠けたファイルが開けない場合、`ofr repair` で直せることがある。");
     }
 }
 

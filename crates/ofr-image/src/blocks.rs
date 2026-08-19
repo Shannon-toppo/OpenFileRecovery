@@ -48,6 +48,21 @@ impl BlockStatus {
     pub fn is_rescued(self) -> bool {
         self == BlockStatus::Finished
     }
+
+    /// 深刻度。大きいほど悪い。
+    ///
+    /// 帯グラフ用に領域をまとめるとき、1 区間に複数の状態が混ざったら
+    /// 深刻なほうを残す。復旧作業で見たいのは「どこが読めていないか」なので、
+    /// 取得済みで不良を隠さない。
+    fn severity(self) -> u8 {
+        match self {
+            BlockStatus::Finished => 0,
+            BlockStatus::NonTried => 1,
+            BlockStatus::NonTrimmed => 2,
+            BlockStatus::NonScraped => 3,
+            BlockStatus::BadSector => 4,
+        }
+    }
 }
 
 impl fmt::Display for BlockStatus {
@@ -215,6 +230,55 @@ impl BlockList {
         self.remaining() == 0
     }
 
+    /// 帯グラフ用に、区間数が `max` 以下になるまで間引いたマップ。
+    ///
+    /// GUI は進捗イベントのたびにこれを描く(PLAN.md 5.2)。不良セクタが
+    /// 1 個だけの区間も潰れて消えないように、まとめるときは深刻なほうを残す。
+    /// 元から `max` 以下ならそのまま返す。
+    pub fn downsample(&self, max: usize) -> Vec<Block> {
+        if max == 0 || self.total == 0 {
+            return Vec::new();
+        }
+        if self.blocks.len() <= max {
+            return self.blocks.clone();
+        }
+
+        // 全域を max 等分し、各バケツに重なるブロックのうち最も深刻な状態を採る。
+        let mut buckets: Vec<Option<BlockStatus>> = vec![None; max];
+        let width = self.total as f64 / max as f64;
+        for b in &self.blocks {
+            let first = ((b.pos as f64 / width) as usize).min(max - 1);
+            let last = (((b.end().saturating_sub(1)) as f64 / width) as usize).min(max - 1);
+            for slot in &mut buckets[first..=last] {
+                match slot {
+                    Some(current) if current.severity() >= b.status.severity() => {}
+                    other => *other = Some(b.status),
+                }
+            }
+        }
+
+        // 同じ状態が続くバケツは 1 区間にまとめる。
+        let mut out: Vec<Block> = Vec::new();
+        for (i, status) in buckets.into_iter().enumerate() {
+            let status = status.unwrap_or(BlockStatus::NonTried);
+            let pos = (i as f64 * width) as u64;
+            let end = if i + 1 == max {
+                self.total
+            } else {
+                ((i + 1) as f64 * width) as u64
+            };
+            match out.last_mut() {
+                Some(last) if last.status == status => last.size = end - last.pos,
+                _ => out.push(Block {
+                    pos,
+                    size: end.saturating_sub(pos),
+                    status,
+                }),
+            }
+        }
+        out
+    }
+
     fn merge(&mut self) {
         let mut merged: Vec<Block> = Vec::with_capacity(self.blocks.len());
         for b in std::mem::take(&mut self.blocks) {
@@ -232,6 +296,40 @@ impl BlockList {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn downsampling_keeps_the_map_short() {
+        let mut list = BlockList::new(1_000_000);
+        // 1000 バイトおきに不良を置いて、区間を大量に作る。
+        for i in 0..500 {
+            list.mark(i * 2000, 1000, BlockStatus::BadSector);
+        }
+        assert!(list.blocks().len() > 100);
+
+        let map = list.downsample(64);
+        assert!(map.len() <= 64, "{} 区間", map.len());
+        assert_eq!(map.first().unwrap().pos, 0);
+        assert_eq!(map.last().unwrap().end(), 1_000_000);
+    }
+
+    /// 潰した区間に不良が 1 個でも混じっていたら不良として見せる。
+    /// 「読めていない場所」を取得済みで隠さないため。
+    #[test]
+    fn downsampling_keeps_the_worst_status() {
+        let mut list = BlockList::new(1_000_000);
+        list.mark(0, 1_000_000, BlockStatus::Finished);
+        list.mark(500_000, 512, BlockStatus::BadSector);
+
+        let map = list.downsample(8);
+        assert!(map.iter().any(|b| b.status == BlockStatus::BadSector));
+    }
+
+    #[test]
+    fn downsampling_a_short_map_changes_nothing() {
+        let mut list = BlockList::new(1000);
+        list.mark(0, 500, BlockStatus::Finished);
+        assert_eq!(list.downsample(64), list.blocks());
+    }
 
     #[test]
     fn starts_as_one_non_tried_block() {

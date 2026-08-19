@@ -1,0 +1,65 @@
+name: Release
+
+# タグを打つとインストーラ (msi / nsis / dmg) を作って、下書きのリリースに置く。
+# 署名と公証は当面かけない (PLAN.md 10章)。未署名なので初回起動時に
+# 警告が出る旨は README に書いてある。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  installers:
+    name: installers (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            # Apple Silicon と Intel の両方で動く 1 つの .dmg にする。
+            args: --target universal-apple-darwin
+          - os: windows-latest
+            args: ""
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: npm ci
+        working-directory: app
+        run: npm ci
+      - name: CLI をビルドする
+        run: cargo build --release -p ofr-cli
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: Open File Recovery ${{ github.ref_name }}
+          releaseBody: |
+            未署名のビルドです。初回起動時に OS の警告が出ます (README の「配布」を参照)。
+            生デバイスの読み込みには管理者 / root 権限が要ります。
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+      - name: CLI も一緒に置く
+        uses: actions/upload-artifact@v4
+        with:
+          name: ofr-cli-${{ matrix.os }}
+          path: |
+            target/release/ofr
+            target/release/ofr.exe
+          if-no-files-found: warn

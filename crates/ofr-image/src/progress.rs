@@ -5,7 +5,12 @@
 
 use std::time::Duration;
 
-use crate::blocks::BlockList;
+use crate::blocks::{Block, BlockList};
+
+/// 進捗イベントに載せる領域マップの最大区間数。
+///
+/// GUI の帯グラフは画面幅ぶんしか描けないので、これ以上細かくしても意味がない。
+pub const MAP_SEGMENTS: usize = 256;
 
 /// イメージングのパス。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,6 +68,10 @@ pub struct Progress {
     pub rate: u64,
     /// 推定残り時間。速度が 0 なら `None`。
     pub eta: Option<Duration>,
+    /// 領域マップ(取得済み / 不良 / 未試行)。GUI が帯グラフにする。
+    ///
+    /// [`MAP_SEGMENTS`] 区間まで間引いてあるので、そのまま描いてよい。
+    pub map: Vec<Block>,
 }
 
 /// イメージング完了時のサマリ。

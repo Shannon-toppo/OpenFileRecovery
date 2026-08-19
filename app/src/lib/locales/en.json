@@ -1,0 +1,288 @@
+{
+  "app": {
+    "title": "Open File Recovery",
+    "subtitle": "Data recovery for USB drives and SD cards",
+    "language": "Language"
+  },
+  "steps": {
+    "device": "Device",
+    "mode": "Task",
+    "run": "Run",
+    "results": "Found",
+    "restore": "Restore"
+  },
+  "common": {
+    "back": "Back",
+    "next": "Next",
+    "cancel": "Stop",
+    "close": "Close",
+    "refresh": "Refresh",
+    "retry": "Try again",
+    "start": "Start",
+    "done": "Done",
+    "select": "Select",
+    "choose": "Choose…",
+    "openFolder": "Open folder",
+    "loading": "Loading…",
+    "none": "None",
+    "elapsed": "Elapsed",
+    "speed": "Speed",
+    "remaining": "Remaining",
+    "errors": "Errors",
+    "size": "Size",
+    "path": "Path",
+    "name": "Name",
+    "modified": "Modified",
+    "status": "Status",
+    "warning": "Warning",
+    "note": "Note",
+    "details": "Details",
+    "search": "Filter (e.g. *.jpg)",
+    "selectAll": "Select all",
+    "clearSelection": "Clear selection",
+    "yes": "Yes",
+    "no": "No",
+    "of": "of",
+    "items": "items",
+    "files": "files",
+    "folders": "folders",
+    "startOver": "Start over"
+  },
+  "devices": {
+    "title": "Which device do you want to recover from?",
+    "lead": "Plug in the USB drive or SD card, then press Refresh. Nothing is ever written to the source device.",
+    "empty": "No devices found. Re-insert the media and press Refresh.",
+    "systemDisk": "Startup disk (cannot be selected)",
+    "notSelectable": "Not selectable",
+    "removable": "Removable",
+    "internal": "Internal",
+    "serial": "S/N",
+    "openImage": "Open an image file",
+    "imageHint": "If you already made an image (.img), opening that is the safer route.",
+    "imageSelected": "Image",
+    "adminNeeded": "Reading a raw device needs administrator rights",
+    "adminExplainMac": "This app is running unprivileged, so reading a device directly will fail. Relaunch as administrator, or make an image with sudo from the CLI and open that image instead.",
+    "adminExplainWin": "This app is running unprivileged. Right-click the app and choose \"Run as administrator\" (the installed build asks at startup).",
+    "relaunch": "Relaunch as administrator",
+    "adminOk": "Running with administrator rights"
+  },
+  "mode": {
+    "title": "What do you want to do?",
+    "lead": "If the media is failing, image it first. Every read can make it worse, so work from the image afterwards.",
+    "deleted": {
+      "title": "Find deleted files",
+      "desc": "Look for files you deleted by accident and pull them out with their folder structure."
+    },
+    "formatted": {
+      "title": "Recover from a formatted device",
+      "desc": "A quick format only clears the index, so folders usually survive. This takes a while."
+    },
+    "image": {
+      "title": "Image a failing device",
+      "desc": "Grab the readable areas first and leave bad sectors for later. You can stop and resume."
+    },
+    "copy": {
+      "title": "Copy everything as it is",
+      "desc": "Mirror what is on the device to another disk, keeping the same structure. Unreadable parts do not stop it."
+    },
+    "carve": {
+      "title": "Search by file format (last resort)",
+      "desc": "For a destroyed file system. It finds the contents, but the original file names are gone for good."
+    }
+  },
+  "run": {
+    "image": "Imaging",
+    "scan": "Scanning",
+    "carve": "Searching by file format",
+    "copy": "Copying",
+    "restore": "Restoring",
+    "repair": "Repairing",
+    "cancelling": "Stopping…",
+    "cancelled": "Stopped. Everything written so far is kept.",
+    "found": "Found",
+    "rescued": "Rescued",
+    "bad": "Bad",
+    "pending": "Not yet read",
+    "pass": "Pass",
+    "regionMap": "Region map",
+    "output": "Output",
+    "source": "Source",
+    "phase": {
+      "copy": "Copy pass",
+      "trim": "Trim pass",
+      "scrape": "Scrape pass",
+      "retry": "Retry pass",
+      "directories": "Walking directories",
+      "orphans": "Scanning orphaned clusters",
+      "carving": "Scanning",
+      "copying": "Copying",
+      "restoring": "Writing"
+    },
+    "map": {
+      "rescued": "Rescued",
+      "bad": "Bad",
+      "nonTried": "Not tried",
+      "nonTrimmed": "Not trimmed",
+      "nonScraped": "Not scraped"
+    }
+  },
+  "image": {
+    "title": "Imaging settings",
+    "output": "Where to write the image",
+    "chooseOutput": "Choose destination…",
+    "mapfileHint": "A .map file is written next to it. You can stop and resume from there.",
+    "retries": "Retries per bad sector",
+    "blockSize": "Read size",
+    "unmount": "Unmount before starting (macOS)",
+    "sameDiskWarning": "The destination must be on a different disk from the source.",
+    "overwrite": "An image with that name already exists. Overwrite it?",
+    "resume": "Found a resume record. Continuing from there.",
+    "result": "Imaging result",
+    "analyzeImage": "Scan this image",
+    "incomplete": "Some areas could not be read. Running again later retries only those areas."
+  },
+  "scan": {
+    "options": "How to search",
+    "deleted": "Look for deleted files",
+    "orphans": "Also search leftover folders (needed after a format; takes longer)",
+    "fs": "File system",
+    "fsAuto": "Detect automatically",
+    "volume": "Volume",
+    "cluster": "Cluster",
+    "bootSource": {
+      "primary": "The boot sector was read normally",
+      "backup": "The primary boot sector was damaged, so the backup was used",
+      "estimated": "No readable boot sector, so the geometry was estimated from the FAT. Results are less reliable"
+    }
+  },
+  "results": {
+    "title": "What was found",
+    "summary": "{files} files / {dirs} folders",
+    "showing": "Showing {shown} of {total}",
+    "selected": "{count} selected ({size})",
+    "empty": "Nothing matches.",
+    "emptyHint": "After a format, scan again with \"search leftover folders\" enabled. If the file system itself is gone, search by file format instead (names cannot be recovered).",
+    "carveInstead": "Search by file format",
+    "restoreSelected": "Restore selected",
+    "preview": "Preview",
+    "previewNone": "Select an item to see its contents",
+    "previewUnsupported": "This format cannot be shown here. Restore it and check with a viewer.",
+    "previewTruncated": "Only the beginning is loaded",
+    "previewFailed": "Could not read it",
+    "warnings": "Warnings during the scan",
+    "status": {
+      "intact": "Intact",
+      "deleted": "Deleted",
+      "orphaned": "Orphaned",
+      "damaged": "Damaged"
+    },
+    "filter": {
+      "all": "All",
+      "intact": "Intact",
+      "deleted": "Deleted",
+      "orphaned": "Orphaned",
+      "damaged": "Damaged"
+    },
+    "concerns": {
+      "contiguous": "Assumed contiguous",
+      "partialName": "Incomplete name",
+      "conflicting": "{count} clusters in use",
+      "truncated": "Not enough data"
+    },
+    "concernHelp": {
+      "contiguous": "The cluster chain is gone, so the file was collected assuming it was stored in one piece. Fragmented files come back broken.",
+      "partialName": "Deletion drops the first character of the short name. Nothing can bring it back.",
+      "conflicting": "That area is in use by another file now, so it has probably been overwritten.",
+      "truncated": "Could not collect as many bytes as the recorded size."
+    },
+    "carved": {
+      "title": "Carved files",
+      "noNames": "Original names are gone. Check the contents before sorting them.",
+      "exact": "Exact end",
+      "truncated": "Estimated end",
+      "camera": "Camera",
+      "shotAt": "Taken"
+    }
+  },
+  "restore": {
+    "title": "Where should the files go?",
+    "dest": "Destination folder",
+    "choose": "Choose a folder…",
+    "sameDiskWarning": "The destination must be on a different disk. Writing to the source device overwrites the data you are trying to recover.",
+    "flatten": "Put everything in one folder instead of rebuilding the structure",
+    "run": "Start restoring",
+    "result": "Restore result",
+    "copied": "Restored",
+    "partial": "Partial",
+    "failed": "Failed",
+    "written": "Bytes written",
+    "missing": "Filled in for unreadable parts",
+    "report": "Report",
+    "openDest": "Open destination",
+    "repairHint": "If a file will not open, you can try repairing it.",
+    "repair": "Try repair"
+  },
+  "copy": {
+    "title": "Copy settings",
+    "dest": "Destination folder",
+    "includeDeleted": "Include deleted and orphaned items",
+    "onExisting": "If a file with the same name exists",
+    "existing": {
+      "rename": "Keep both, adding a number",
+      "skip": "Skip (to continue an interrupted copy)",
+      "overwrite": "Overwrite"
+    },
+    "result": "Copy result"
+  },
+  "carve": {
+    "title": "Search by file format",
+    "output": "Where to put the carved files",
+    "align": "Boundary to look at",
+    "alignHint": "If you know the cluster size (e.g. 4096), setting it makes this faster and more accurate.",
+    "formats": "Formats to look for",
+    "allFormats": "All formats",
+    "result": "Carving result",
+    "found": "{count} files ({size})",
+    "noNames": "Original names cannot be recovered. Files with a readable capture date get it in the name."
+  },
+  "repair": {
+    "title": "Repair a broken file",
+    "lead": "The original is never modified. The repaired copy is written as a separate file.",
+    "input": "File to repair",
+    "output": "Output file",
+    "reference": "Reference file (optional)",
+    "referenceHint": "A healthy file from the same device with the same settings improves the result. JPEG borrows the header, MP4 the moov layout, AVI the hdrl.",
+    "run": "Repair",
+    "result": "Repair result",
+    "fixes": "What was fixed",
+    "issues": "What could not be fixed",
+    "verification": "Verification",
+    "status": {
+      "intact": "It was not broken",
+      "repaired": "Repaired",
+      "partial": "Partially repaired",
+      "failed": "Could not repair"
+    },
+    "mp4Expectation": "Rebuilding an MP4 index without a reference file has a low success rate, commercial tools included. You get the video stream only, and audio is lost.",
+    "videoVerify": "Automatic checks for video stop at container consistency. Confirm playback in a player yourself."
+  },
+  "errors": {
+    "title": "That did not work",
+    "permissionDenied": "Not enough privileges",
+    "systemDisk": "The startup disk cannot be a recovery source",
+    "sameDevice": "The destination is on the same device as the source",
+    "busy": "The device is in use",
+    "notFound": "Not found",
+    "noFilesystem": "No FAT32 or exFAT volume found",
+    "badRequest": "Invalid settings",
+    "io": "Writing failed",
+    "other": "Error",
+    "noFilesystemHint": "The file system may be destroyed. Searching by file format still finds the contents (but not the names).",
+    "sameDeviceHint": "Choose another disk. Writing to the source device overwrites the data you want back."
+  },
+  "safety": {
+    "readOnly": "Never writes to the source device",
+    "imageFirst": "For failing media, image it first and work from the image. Every read can make it worse.",
+    "liveDevice": "Reading the device directly"
+  }
+}
