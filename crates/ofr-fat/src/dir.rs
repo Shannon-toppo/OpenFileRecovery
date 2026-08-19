@@ -329,7 +329,7 @@ fn recover_first_byte(raw: &[u8], checksum: u8) -> Option<u8> {
     // 先に見つかった「ファイル名に使われやすい文字」を採る。
     let order = (b'A'..=b'Z')
         .chain(b'0'..=b'9')
-        .chain([b'_', b'-', b'~', b'!', b'#', b'$', b'%', b'&', b'@', b'^'])
+        .chain(*b"_-~!#$%&@^")
         .chain(0x80..=0xFF)
         .chain(b'a'..=b'z');
     for byte in order {
