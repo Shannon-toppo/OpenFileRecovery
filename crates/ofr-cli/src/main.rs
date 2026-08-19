@@ -1,7 +1,7 @@
 //! Open File Recovery の CLI。
 //!
 //! GUI より先に全機能をここで動かして検証する(PLAN.md 8章)。
-//! Phase 3 の時点で使えるのは列挙・イメージング・解析・復元・カービングの 5 つ。
+//! Phase 4 の時点で使えるのは列挙・イメージング・解析・復元・カービング・コピーの 6 つ。
 //!
 //! ```text
 //! ofr list
@@ -9,6 +9,7 @@
 //! ofr scan /Volumes/Backup/usb.img
 //! ofr restore /Volumes/Backup/usb.img /Volumes/Backup/recovered
 //! ofr carve /Volumes/Backup/usb.img /Volumes/Backup/carved
+//! ofr copy /Volumes/USB /Volumes/Backup/mirror
 //! ```
 //!
 //! 生デバイスの読み込みには管理者 / root 権限が必要。
@@ -20,6 +21,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 mod carve;
+mod copy;
 mod filter;
 mod format;
 mod image;
@@ -84,6 +86,9 @@ enum Command {
 
     /// ファイルシステムに頼らず、シグネチャからファイルを探して切り出す。
     Carve(carve::CarveArgs),
+
+    /// デバイスの中身をフォルダ構造ごと宛先へ写す。
+    Copy(copy::CopyArgs),
 }
 
 fn main() -> ExitCode {
@@ -98,6 +103,7 @@ fn main() -> ExitCode {
         Command::Scan(args) => scan::run(args),
         Command::Restore(args) => restore::run(args),
         Command::Carve(args) => carve::run(args),
+        Command::Copy(args) => copy::run(args),
     };
 
     match result {
@@ -117,13 +123,13 @@ fn main() -> ExitCode {
 
 fn init_tracing(verbose: u8) {
     // クレート名は ofr_device / ofr_image / ofr_fs / ofr_fat / ofr_exfat / ofr_carve /
-    // ofr_cli になる。
+    // ofr_copy / ofr_cli になる。
     let level = match verbose {
         0 => {
-            "warn,ofr_cli=info,ofr_image=info,ofr_device=info,ofr_fs=info,ofr_fat=info,ofr_exfat=info,ofr_carve=info"
+            "warn,ofr_cli=info,ofr_image=info,ofr_device=info,ofr_fs=info,ofr_fat=info,ofr_exfat=info,ofr_carve=info,ofr_copy=info"
         }
         1 => {
-            "info,ofr_cli=debug,ofr_image=debug,ofr_device=debug,ofr_fs=debug,ofr_fat=debug,ofr_exfat=debug,ofr_carve=debug"
+            "info,ofr_cli=debug,ofr_image=debug,ofr_device=debug,ofr_fs=debug,ofr_fat=debug,ofr_exfat=debug,ofr_carve=debug,ofr_copy=debug"
         }
         _ => "trace",
     };

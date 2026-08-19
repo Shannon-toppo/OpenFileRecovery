@@ -299,6 +299,7 @@ dependencies = [
  "clap",
  "ctrlc",
  "ofr-carve",
+ "ofr-copy",
  "ofr-device",
  "ofr-exfat",
  "ofr-fat",
@@ -308,6 +309,20 @@ dependencies = [
  "tempfile",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "ofr-copy"
+version = "0.0.1"
+dependencies = [
+ "ofr-device",
+ "ofr-exfat",
+ "ofr-fat",
+ "ofr-fs",
+ "ofr-testfs",
+ "tempfile",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
