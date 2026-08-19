@@ -8,6 +8,7 @@ members = [
     "crates/ofr-exfat",
     "crates/ofr-carve",
     "crates/ofr-copy",
+    "crates/ofr-repair",
     "crates/ofr-testfs",
     "crates/ofr-cli",
 ]
@@ -26,6 +27,7 @@ ofr-fat = { path = "crates/ofr-fat" }
 ofr-exfat = { path = "crates/ofr-exfat" }
 ofr-carve = { path = "crates/ofr-carve" }
 ofr-copy = { path = "crates/ofr-copy" }
+ofr-repair = { path = "crates/ofr-repair" }
 ofr-testfs = { path = "crates/ofr-testfs" }
 
 thiserror = "2"
