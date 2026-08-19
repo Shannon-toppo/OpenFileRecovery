@@ -1,0 +1,288 @@
+{
+  "app": {
+    "title": "Open File Recovery",
+    "subtitle": "USB メモリ / SD カードのデータ復旧",
+    "language": "言語"
+  },
+  "steps": {
+    "device": "デバイス",
+    "mode": "やること",
+    "run": "実行",
+    "results": "見つかったもの",
+    "restore": "復元"
+  },
+  "common": {
+    "back": "戻る",
+    "next": "次へ",
+    "cancel": "中断",
+    "close": "閉じる",
+    "refresh": "更新",
+    "retry": "やり直す",
+    "start": "開始",
+    "done": "完了",
+    "select": "選ぶ",
+    "choose": "選択…",
+    "openFolder": "フォルダを開く",
+    "loading": "読み込み中…",
+    "none": "なし",
+    "elapsed": "経過",
+    "speed": "速度",
+    "remaining": "残り",
+    "errors": "エラー",
+    "size": "サイズ",
+    "path": "パス",
+    "name": "名前",
+    "modified": "更新日時",
+    "status": "状態",
+    "warning": "注意",
+    "note": "メモ",
+    "details": "詳細",
+    "search": "絞り込み (例 *.jpg)",
+    "selectAll": "全部選ぶ",
+    "clearSelection": "選択を外す",
+    "yes": "はい",
+    "no": "いいえ",
+    "of": "/",
+    "items": "件",
+    "files": "ファイル",
+    "folders": "フォルダ",
+    "startOver": "最初から"
+  },
+  "devices": {
+    "title": "どのデバイスから復旧する?",
+    "lead": "USB メモリや SD カードを挿してから「更新」を押す。復旧元には一切書き込まない。",
+    "empty": "デバイスが見つからない。挿し直して「更新」を押すこと。",
+    "systemDisk": "起動ディスク(選択不可)",
+    "notSelectable": "選択不可",
+    "removable": "リムーバブル",
+    "internal": "内蔵",
+    "serial": "S/N",
+    "openImage": "イメージファイルを開く",
+    "imageHint": "先に吸い出したイメージ (.img) があるなら、そちらを開くほうが安全。",
+    "imageSelected": "イメージ",
+    "adminNeeded": "生デバイスを読むには管理者権限が要る",
+    "adminExplainMac": "いまは通常権限で動いている。デバイスを直接読む操作は失敗する。管理者で起動し直すか、ターミナルで sudo を付けて CLI からイメージを取り、そのイメージを開くこと。",
+    "adminExplainWin": "いまは通常権限で動いている。アプリを右クリックして「管理者として実行」で開き直すこと(インストール版は起動時に確認が出る)。",
+    "relaunch": "管理者で起動し直す",
+    "adminOk": "管理者権限で動いている"
+  },
+  "mode": {
+    "title": "何をする?",
+    "lead": "壊れかけたメディアなら、まず「丸ごと吸い出す」。読むたびに悪化するので、以後は取ったイメージを相手にする。",
+    "deleted": {
+      "title": "削除したファイルを探す",
+      "desc": "うっかり消したファイルを、フォルダ構造ごと探して取り出す。"
+    },
+    "formatted": {
+      "title": "フォーマットしたデバイスから探す",
+      "desc": "クイックフォーマット後でも、フォルダの残骸から中身を拾える。時間はかかる。"
+    },
+    "image": {
+      "title": "壊れかけたデバイスを丸ごと吸い出す",
+      "desc": "読めるところから先に確保し、不良セクタは後回しにする。中断しても続きから再開できる。"
+    },
+    "copy": {
+      "title": "フォルダごとコピーする",
+      "desc": "いま入っているものを、同じ構造のまま別のディスクへ写す。読めない部分があっても止まらない。"
+    },
+    "carve": {
+      "title": "ファイル形式から探す(最終手段)",
+      "desc": "ファイルシステムが全損しているとき用。中身は拾えるが、元のファイル名は戻らない。"
+    }
+  },
+  "run": {
+    "image": "吸い出しています",
+    "scan": "解析しています",
+    "carve": "ファイル形式を探しています",
+    "copy": "コピーしています",
+    "restore": "復元しています",
+    "repair": "修復しています",
+    "cancelling": "中断しています…",
+    "cancelled": "中断した。ここまでの結果は残っている。",
+    "found": "見つかった数",
+    "rescued": "取得済み",
+    "bad": "不良",
+    "pending": "未取得",
+    "pass": "パス",
+    "regionMap": "領域マップ",
+    "output": "出力先",
+    "source": "復旧元",
+    "phase": {
+      "copy": "コピーパス",
+      "trim": "トリムパス",
+      "scrape": "スクレイプパス",
+      "retry": "リトライパス",
+      "directories": "ディレクトリ走査",
+      "orphans": "孤立クラスタ走査",
+      "carving": "走査",
+      "copying": "コピー",
+      "restoring": "書き出し"
+    },
+    "map": {
+      "rescued": "取得済み",
+      "bad": "不良",
+      "nonTried": "未試行",
+      "nonTrimmed": "未トリム",
+      "nonScraped": "未スクレイプ"
+    }
+  },
+  "image": {
+    "title": "吸い出しの設定",
+    "output": "イメージの出力先",
+    "chooseOutput": "保存先を選ぶ…",
+    "mapfileHint": "同じ場所に .map を書く。中断してもここから再開できる。",
+    "retries": "不良セクタのリトライ回数",
+    "blockSize": "読み込み単位",
+    "unmount": "開始前にアンマウントする (macOS)",
+    "sameDiskWarning": "出力先は必ず復旧元と別のディスクにすること。",
+    "overwrite": "同じ名前のイメージが既にある。上書きする?",
+    "resume": "再開用の記録が見つかった。続きから進む。",
+    "result": "吸い出しの結果",
+    "analyzeImage": "このイメージを解析する",
+    "incomplete": "読めない領域が残っている。時間をおいて同じ設定で実行すると、不良領域だけを再試行する。"
+  },
+  "scan": {
+    "options": "探し方",
+    "deleted": "削除されたファイルを探す",
+    "orphans": "フォルダの残骸まで探す(フォーマット後はこれが要る。時間がかかる)",
+    "fs": "ファイルシステム",
+    "fsAuto": "自動判定",
+    "volume": "ボリューム",
+    "cluster": "クラスタ",
+    "bootSource": {
+      "primary": "ブートセクタは正常に読めた",
+      "backup": "先頭のブートセクタが壊れていたので、バックアップから読んだ",
+      "estimated": "ブートセクタが読めないので、FAT 表から推定した。結果の信頼度は落ちる"
+    }
+  },
+  "results": {
+    "title": "見つかったもの",
+    "summary": "ファイル {files} 件 / フォルダ {dirs} 件",
+    "showing": "{shown} 件を表示 (該当 {total} 件)",
+    "selected": "{count} 件を選択 ({size})",
+    "empty": "条件に合うものがない。",
+    "emptyHint": "フォーマット済みなら「フォルダの残骸まで探す」を有効にして解析し直す。ファイルシステム自体が壊れているなら、ファイル形式から探す(名前は戻らない)。",
+    "carveInstead": "ファイル形式から探す",
+    "restoreSelected": "選んだものを復元",
+    "preview": "プレビュー",
+    "previewNone": "項目を選ぶと中身を表示する",
+    "previewUnsupported": "この形式は画面で表示できない。復元してから確かめること。",
+    "previewTruncated": "先頭だけ読み込んでいる",
+    "previewFailed": "読み出せなかった",
+    "warnings": "解析中の警告",
+    "status": {
+      "intact": "無傷",
+      "deleted": "削除済み",
+      "orphaned": "孤立",
+      "damaged": "破損"
+    },
+    "filter": {
+      "all": "すべて",
+      "intact": "無傷",
+      "deleted": "削除済み",
+      "orphaned": "孤立",
+      "damaged": "破損"
+    },
+    "concerns": {
+      "contiguous": "連続配置と仮定",
+      "partialName": "名前が不完全",
+      "conflicting": "使用中クラスタ {count} 個",
+      "truncated": "領域が足りない"
+    },
+    "concernHelp": {
+      "contiguous": "つながり情報が消えているので、開始位置から連続していると仮定して拾った。断片化していたファイルはこの仮定で壊れる。",
+      "partialName": "削除時に名前の先頭 1 文字が失われている。仕様上どうやっても戻らない。",
+      "conflicting": "その領域は今も別のファイルに使われている。上書きされている可能性が高い。",
+      "truncated": "記録されたサイズぶんの領域を集めきれなかった。"
+    },
+    "carved": {
+      "title": "切り出したファイル",
+      "noNames": "元のファイル名は戻らない。中身を確認してから整理すること。",
+      "exact": "境界確定",
+      "truncated": "境界推定",
+      "camera": "撮影機器",
+      "shotAt": "撮影日時"
+    }
+  },
+  "restore": {
+    "title": "どこへ復元する?",
+    "dest": "復元先フォルダ",
+    "choose": "フォルダを選ぶ…",
+    "sameDiskWarning": "復元先は必ず復旧元と別のディスクにすること。同じデバイス上だと上書きで復元できなくなる。",
+    "flatten": "フォルダ構造を作らず、平らに並べる",
+    "run": "復元を始める",
+    "result": "復元の結果",
+    "copied": "復元できた",
+    "partial": "一部だけ",
+    "failed": "失敗",
+    "written": "書き出したバイト数",
+    "missing": "読めずに埋めた分",
+    "report": "レポート",
+    "openDest": "復元先を開く",
+    "repairHint": "開けないファイルがあれば、修復を試せる。",
+    "repair": "修復を試す"
+  },
+  "copy": {
+    "title": "コピーの設定",
+    "dest": "コピー先フォルダ",
+    "includeDeleted": "削除済み・孤立の項目もコピーする",
+    "onExisting": "同じ名前があったとき",
+    "existing": {
+      "rename": "番号を足して両方残す",
+      "skip": "飛ばす(中断したコピーの続き)",
+      "overwrite": "上書きする"
+    },
+    "result": "コピーの結果"
+  },
+  "carve": {
+    "title": "ファイル形式から探す",
+    "output": "切り出したファイルの置き場",
+    "align": "先頭を探す境界",
+    "alignHint": "クラスタサイズ (4096 など) が分かっているなら指定すると速く正確になる。",
+    "formats": "探す形式",
+    "allFormats": "全形式",
+    "result": "切り出しの結果",
+    "found": "{count} 件 ({size})",
+    "noNames": "元のファイル名は復元できない。撮影日時が読めたものは名前に入る。"
+  },
+  "repair": {
+    "title": "壊れたファイルを直す",
+    "lead": "修復元は書き換えない。直したものは別のファイルとして書き出す。",
+    "input": "直したいファイル",
+    "output": "出力先",
+    "reference": "参照ファイル(任意)",
+    "referenceHint": "同じ機器・同じ設定で作られた正常なファイルがあると精度が上がる。JPEG はヘッダを、MP4 は moov の構造を、AVI は hdrl をここから借りる。",
+    "run": "修復する",
+    "result": "修復の結果",
+    "fixes": "直したこと",
+    "issues": "直しきれなかったこと",
+    "verification": "検証",
+    "status": {
+      "intact": "元から壊れていなかった",
+      "repaired": "直った",
+      "partial": "一部だけ直った",
+      "failed": "直せなかった"
+    },
+    "mp4Expectation": "参照ファイルなしの MP4 修復は、市販ソフトを含めて成功率が大きく落ちる。映像だけを取り出す形になり、音声は戻らない。",
+    "videoVerify": "動画の自動検証は構造の整合性まで。実際に再生できるかはプレイヤーで確かめること。"
+  },
+  "errors": {
+    "title": "できなかった",
+    "permissionDenied": "権限が足りない",
+    "systemDisk": "起動ディスクは復旧元にできない",
+    "sameDevice": "出力先が復旧元と同じデバイス上にある",
+    "busy": "デバイスが使用中",
+    "notFound": "見つからない",
+    "noFilesystem": "FAT32 / exFAT のボリュームが見つからない",
+    "badRequest": "指定が正しくない",
+    "io": "書き込みに失敗した",
+    "other": "エラー",
+    "noFilesystemHint": "ファイルシステムが全損している可能性がある。ファイル形式から探すと中身だけは拾える(名前は戻らない)。",
+    "sameDeviceHint": "別のディスクを指定すること。同じデバイスに書くと、復元したいデータを上書きしてしまう。"
+  },
+  "safety": {
+    "readOnly": "復旧元には書き込まない",
+    "imageFirst": "壊れかけたメディアは、まず吸い出してからイメージを解析すること。読むたびに悪化する。",
+    "liveDevice": "デバイスを直接読んでいる"
+  }
+}

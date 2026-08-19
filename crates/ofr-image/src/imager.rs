@@ -495,6 +495,7 @@ impl Run<'_> {
             elapsed,
             rate,
             eta,
+            map: blocks.downsample(crate::progress::MAP_SEGMENTS),
         };
         callback(&progress);
     }

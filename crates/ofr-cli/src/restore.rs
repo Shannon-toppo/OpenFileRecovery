@@ -132,10 +132,7 @@ pub fn run(args: RestoreArgs) -> Result<Outcome, Box<dyn Error>> {
     println!("走査中...");
     let tree = fs.scan(&options, None)?;
 
-    let filter = Filter {
-        include: args.include.clone(),
-        statuses: args.status.clone(),
-    };
+    let filter = Filter::new(args.include.clone(), &args.status);
     let targets: Vec<&RecoveredEntry> = tree
         .entries()
         .iter()
@@ -304,7 +301,7 @@ fn print_summary(results: &[Restored], report: Option<&Path>) {
     println!();
     println!(
         "復元したファイルが開けない場合、断片化していた可能性がある\
-         (Phase 5 の修復モジュールは未実装)。"
+         (`ofr repair` で直せることがある)。"
     );
 }
 

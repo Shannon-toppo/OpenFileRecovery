@@ -19,6 +19,7 @@ ofr-exfat.workspace = true
 ofr-carve.workspace = true
 ofr-copy.workspace = true
 ofr-repair.workspace = true
+ofr-core.workspace = true
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
 tracing.workspace = true
