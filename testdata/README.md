@@ -12,13 +12,30 @@
 cargo run -p ofr-testfs -- testdata/out
 ```
 
-## シナリオ
+## シナリオ (ファイルシステム解析用)
 
 | 名前 | 内容 |
 |---|---|
 | `fat32_deleted` / `exfat_deleted` | ファイルを配置してから一部を削除した状態 |
 | `fat32_quick_format` / `exfat_quick_format` | クイックフォーマット後 (FAT 表とルートだけ消えている) |
 | `fat32_fragmented` / `exfat_fragmented` | 断片化したファイルを削除した状態。連続配置の仮定が外れるケース |
+
+## カービング用イメージ
+
+ファイルシステムを持たない、全対応形式のサンプルをクラスタ境界に並べただけの
+イメージ。カービングは FS を見ないのでこれで足りる。生成はテストコード側にある
+(`crates/ofr-carve/tests/support/`)。
+
+```bash
+cargo test -p ofr-carve --test carving -- --ignored write_test_image --nocapture
+```
+
+`out/carve-test.img` と、埋めた位置の一覧 `out/carve-test.manifest.tsv`、
+照合用の元ファイル `out/<名前>.bin` が出る。
+
+```bash
+ofr carve testdata/out/carve-test.img /tmp/carved --align 4096
+```
 
 ## 生成物が本物であることの確認
 

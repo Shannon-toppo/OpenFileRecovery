@@ -5,7 +5,7 @@ USB メモリと SD カードを主対象にしたデータ復旧ツール。Rus
 
 MIT ライセンス。GPL/LGPL のコードは流用していない。外部バイナリ (ffmpeg など) にも依存しない。
 
-## いまできること (Phase 2)
+## いまできること (Phase 3)
 
 | コマンド | 内容 |
 |---|---|
@@ -13,8 +13,9 @@ MIT ライセンス。GPL/LGPL のコードは流用していない。外部バ�
 | `ofr image` | 壊れかけメディアの吸い出し (ddrescue 方式の多段パス + mapfile による中断・再開) |
 | `ofr scan` | FAT32 / exFAT の解析。生きているファイル、削除されたファイル、フォーマットで消えたフォルダを一覧する |
 | `ofr restore` | 見つかったファイルをフォルダ構造ごと復元先へ書き出す |
+| `ofr carve` | ファイルシステムに頼らないシグネチャカービング + Exif メタデータ抽出 |
 
-カービング (Phase 3)、コピー (Phase 4)、修復 (Phase 5)、GUI (Phase 6) は未実装。
+コピー (Phase 4)、修復 (Phase 5)、GUI (Phase 6) は未実装。
 
 ## ビルドと実行
 
@@ -40,6 +41,9 @@ ofr scan /Volumes/Backup/usb.img
 
 # 見つかったものを復元する。復元先は必ず別のディスクにすること
 ofr restore /Volumes/Backup/usb.img /Volumes/Backup/recovered
+
+# ファイルシステムが全損している場合の最終手段
+ofr carve /Volumes/Backup/usb.img /Volumes/Backup/carved
 ```
 
 `ofr scan` は 2 段構えで探す。まずディレクトリツリーを普通に辿り、次にデータ領域を
@@ -84,6 +88,35 @@ ofr restore /Volumes/Backup/usb.img /Volumes/Backup/recovered
 
 終了コードは 0 = 全部できた、1 = 何も見つからない / 一部だけ / 中断、2 = エラー。
 
+### `ofr carve`
+
+フルフォーマット済み、あるいはファイルシステムが全損して `ofr scan` で何も出ない
+デバイスからの最終手段。FS を一切見ず、デバイスを先頭から走査してファイル形式の
+マジックバイトを探し、ヘッダのサイズ情報や終端マーカーから境界を計算して切り出す。
+
+対応形式: JPEG, PNG, GIF, HEIC, MP4/MOV, AVI, WAV, MP3, ZIP (docx/xlsx/pptx を含む), PDF。
+
+**元のファイル名は復元できない。** ディレクトリ情報を見ないので原理的に無理で、
+名前は連番になる。Exif (JPEG) や `mvhd` (MP4) から撮影日時を拾えたものは
+`20230415-142530_000042.jpg` のように日時が付く。名前が要るなら先に `ofr scan` を試すこと。
+
+| オプション | 既定 | 内容 |
+|---|---|---|
+| `-a, --align <SIZE>` | `512` | ファイル先頭を探す境界。クラスタサイズ (`4096` など) が分かるなら指定すると速く正確になる |
+| `-f, --formats <LIST>` | 全形式 | `jpeg,png,mp4` のようにカンマ区切りで絞る |
+| `--max-size <SIZE>` | `4G` | 1 ファイルの上限 |
+| `--start` / `--end` | — | 走査範囲を絞る |
+| `--skip-truncated` | — | 終端を確定できなかったファイルを出力しない |
+| `--dry-run` | — | 書き出さず、見つかるファイルの一覧だけを出す |
+| `--report <PATH>` | `<出力>/carve-report.json` | 結果の JSON |
+
+出力は形式ごとのサブフォルダ (`jpg/`, `mp4/` …) に分かれる。終了コードは
+0 = 走査完了、1 = 中断、2 = エラー。
+
+終端を確定できなかったファイルには「推定」が付く。この場合は次のシグネチャの手前まで
+切り出すので、後ろに余分なデータが付いていることがある。断片化していたファイルは
+`ofr restore` と同じく連続配置を仮定するため壊れる (Phase 5 の修復行き)。
+
 ## 安全のための決まり
 
 - **復旧元デバイスには一切書き込まない。** デバイス抽象 (`trait Device`) に書き込み API を作っていない。
@@ -101,7 +134,8 @@ ofr restore /Volumes/Backup/usb.img /Volumes/Backup/recovered
   連続配置と仮定して回収するので、断片化していたファイルは壊れた状態で復元される。
   該当する項目には注記が付く。
 - **NTFS / APFS / ext4**: 対応しない。対象は FAT32 と exFAT (USB メモリと SD カードの標準)。
-  ファイルシステムを問わないシグネチャカービングは Phase 3 で入れる。
+  ファイルシステムを問わない `ofr carve` なら中身は拾えるが、ファイル名は戻らない。
+- **カービングでのファイル名**: 原理的に復元できない (上記 `ofr carve` 参照)。
 
 ## 開発
 
@@ -122,6 +156,15 @@ OS のフォーマッタを呼ばずに CI 内で完結する。生成物は本�
 ```bash
 cargo run -p ofr-testfs -- testdata/out
 hdiutil attach -imagekey diskimage-class=CRawDiskImage -readonly testdata/out/fat32_deleted.img
+```
+
+カービングは全対応形式のサンプルを機械生成してテストイメージに埋め、正しい境界で
+切り出せるか (中身が元と 1 バイトも違わないか) を検証している
+(`crates/ofr-carve/tests/`)。CLI を手で試すためのイメージはこれで作れる。
+
+```bash
+cargo test -p ofr-carve --test carving -- --ignored write_test_image --nocapture
+ofr carve testdata/out/carve-test.img /tmp/carved --align 4096
 ```
 
 ### 実機での手動確認 (CI で回せない項目)
@@ -156,6 +199,13 @@ Phase 2 で足したぶんの手動確認:
    フォルダが出ること。復元したファイルが開けること。
 8. 復元先に復旧元と同じデバイス上のフォルダを指定すると、終了コード 2 で拒否すること。
 
+Phase 3 で足したぶんの手動確認:
+
+9. 写真の入った SD カードをフォーマットしてから `ofr carve` を掛け、写真が戻ること。
+   撮影日時がファイル名に入り、画像ビューア / 動画プレイヤーで実際に開けること。
+10. `ofr carve --align <クラスタサイズ>` の方が既定 (512) より速く、拾える数が
+    変わらないこと。
+
 7 は**実機でしか確認できない**。macOS のディスクイメージ (`hdiutil attach` した .img) を
 `newfs_msdos` でフォーマットすると、イメージ側が TRIM を受けて全域ゼロになるため、
 残骸が一切残らない。USB メモリと SD カードは通常 TRIM が効かないので実機では残る
@@ -169,7 +219,8 @@ Windows / USB メモリ。
 ### クレート構成
 
 `ofr-device` (デバイス) → `ofr-image` (イメージング) / `ofr-fs` (解析の共通土台) →
-`ofr-fat` `ofr-exfat` (ファイルシステム) → `ofr-cli`。
+`ofr-fat` `ofr-exfat` (ファイルシステム) / `ofr-carve` (カービング) → `ofr-cli`。
+`ofr-carve` は FS を見ないので `ofr-device` にしか依存しない。
 
 PLAN.md の構成に対して `ofr-fs` と `ofr-testfs` を足してある。前者は FAT32 と exFAT で
 中身が同じになる部分 (中間表現、32bit FAT 表、パーティション解析、復元処理) の置き場で、
