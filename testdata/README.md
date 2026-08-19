@@ -37,6 +37,32 @@ cargo test -p ofr-carve --test carving -- --ignored write_test_image --nocapture
 ofr carve testdata/out/carve-test.img /tmp/carved --align 4096
 ```
 
+## 破損サンプル集 (修復用)
+
+`ofr repair` の回帰テストで使う、壊れたファイルの一式 (PLAN.md 9章)。正常な
+JPEG / PNG / AVI / MP4 を機械生成し、そこから「ヘッダ破壊」「途中切断」
+「moov 削除」「idx1 削除」「CRC 破壊」を作る。生成はテストコード側にある
+(`crates/ofr-repair/tests/support/`)。
+
+```bash
+cargo test -p ofr-repair --test repair -- --ignored write_samples --nocapture
+```
+
+`out/repair/` に `healthy.*` と壊したものが並ぶ。自動テストが踏み込めない
+「実際に開けるか / 再生できるか」は、ここを手元のビューアやプレイヤーで確かめる。
+
+```bash
+ofr repair testdata/out/repair/truncated.jpg /tmp/fixed.jpg
+ofr repair testdata/out/repair/no-moov.mp4 /tmp/fixed.mp4 \
+    --reference testdata/out/repair/healthy.mp4
+```
+
+静止画は `image` クレートで実際にエンコードした本物なので、修復結果を元の絵と
+画素単位で比べられる。動画は構造だけを手で組み立てたもので、中身の画素と音声は
+詰め物 (修復が見るのは索引とボックス構造だけなのでこれで足りる)。ただし
+**詰め物の動画はプレイヤーで映像として再生できない**ので、上の手動確認には
+実機で撮った本物の動画を使うこと。
+
 ## 生成物が本物であることの確認
 
 生成したイメージは実際のフォーマットとして妥当なので、OS にマウントさせて

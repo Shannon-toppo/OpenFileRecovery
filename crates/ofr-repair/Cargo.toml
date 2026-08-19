@@ -1,0 +1,32 @@
+[package]
+name = "ofr-repair"
+description = "Open File Recovery: 破損ファイル修復 (JPEG / PNG / AVI / MP4)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ofr-device.workspace = true
+crc32fast.workspace = true
+miniz_oxide = "0.8"
+thiserror.workspace = true
+tracing.workspace = true
+# 修復結果の検証デコード (PLAN.md 5.6)。JPEG/PNG しか読まないので
+# default-features は落としてある。
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+], optional = true }
+
+[features]
+default = ["verify-decode"]
+# 修復した JPEG / PNG を実際にデコードして検証する。
+verify-decode = ["dep:image"]
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+tempfile = "3"
+
+[lints]
+workspace = true

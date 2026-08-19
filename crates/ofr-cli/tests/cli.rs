@@ -408,3 +408,79 @@ fn copy_refuses_a_destination_on_the_source_device() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("同じデバイス上"), "{stderr}");
 }
+
+// ---------------------------------------------------------------- repair
+
+/// 見て分かる絵の付いた PNG を作る。
+fn sample_png(width: u32, height: u32) -> Vec<u8> {
+    let img = image::RgbImage::from_fn(width, height, |x, y| {
+        image::Rgb([(x * 3) as u8, (y * 5) as u8, 128])
+    });
+    let mut out = Vec::new();
+    image::DynamicImage::ImageRgb8(img)
+        .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+        .unwrap();
+    out
+}
+
+#[test]
+fn repair_fixes_a_truncated_png() {
+    let dir = tempfile::tempdir().unwrap();
+    let healthy = sample_png(64, 64);
+    let input = dir.path().join("broken.png");
+    let output = dir.path().join("fixed.png");
+    let report = dir.path().join("report.json");
+    std::fs::write(&input, &healthy[..healthy.len() * 6 / 10]).unwrap();
+
+    let out = ofr(&[
+        "repair",
+        input.to_str().unwrap(),
+        output.to_str().unwrap(),
+        "--report",
+        report.to_str().unwrap(),
+    ]);
+    let text = stdout(&out);
+
+    // 中身が欠けているので「直しきれなかった」側の終了コードになる。
+    assert_eq!(out.status.code(), Some(EXIT_INCOMPLETE), "{text}");
+    assert!(text.contains("一部だけ修復した"), "{text}");
+    assert!(text.contains("デコード成功 (64x64)"), "{text}");
+    assert!(text.contains("修復元は書き換えていない"), "{text}");
+
+    // 出力は本物の PNG として開ける。
+    let fixed = image::load_from_memory(&std::fs::read(&output).unwrap()).unwrap();
+    assert_eq!((fixed.width(), fixed.height()), (64, 64));
+
+    let json = std::fs::read_to_string(&report).unwrap();
+    assert!(json.contains("\"format\": \"png\""), "{json}");
+    assert!(json.contains("\"status\": \"partial\""), "{json}");
+}
+
+#[test]
+fn repair_leaves_a_healthy_file_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("ok.png");
+    let output = dir.path().join("copy.png");
+    std::fs::write(&input, sample_png(32, 32)).unwrap();
+
+    let out = ofr(&["repair", input.to_str().unwrap(), output.to_str().unwrap()]);
+    let text = stdout(&out);
+    assert_eq!(out.status.code(), Some(EXIT_OK), "{text}");
+    assert!(text.contains("壊れていない"), "{text}");
+    assert_eq!(
+        std::fs::read(&input).unwrap(),
+        std::fs::read(&output).unwrap()
+    );
+}
+
+#[test]
+fn repair_refuses_to_write_over_the_original() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("photo.png");
+    std::fs::write(&input, sample_png(16, 16)).unwrap();
+
+    let out = ofr(&["repair", input.to_str().unwrap(), input.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("修復元と同じ"), "{err}");
+}
