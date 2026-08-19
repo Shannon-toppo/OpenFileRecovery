@@ -6,6 +6,7 @@ members = [
     "crates/ofr-fs",
     "crates/ofr-fat",
     "crates/ofr-exfat",
+    "crates/ofr-carve",
     "crates/ofr-testfs",
     "crates/ofr-cli",
 ]
@@ -22,10 +23,13 @@ ofr-image = { path = "crates/ofr-image" }
 ofr-fs = { path = "crates/ofr-fs" }
 ofr-fat = { path = "crates/ofr-fat" }
 ofr-exfat = { path = "crates/ofr-exfat" }
+ofr-carve = { path = "crates/ofr-carve" }
 ofr-testfs = { path = "crates/ofr-testfs" }
 
 thiserror = "2"
 tracing = "0.1"
+memchr = "2"
+crc32fast = "1"
 
 [workspace.lints.rust]
 missing_docs = "warn"

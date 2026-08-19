@@ -1,0 +1,21 @@
+[package]
+name = "ofr-carve"
+description = "Open File Recovery: シグネチャカービング (FS 非依存のファイル探索)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ofr-device.workspace = true
+memchr.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+ofr-device = { workspace = true, features = ["mock"] }
+crc32fast.workspace = true
+tempfile = "3"
+
+[lints]
+workspace = true
