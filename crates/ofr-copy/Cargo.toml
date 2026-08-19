@@ -1,0 +1,23 @@
+[package]
+name = "ofr-copy"
+description = "Open File Recovery: 構造保持コピー (論理コピー / イメージ展開 + レポート)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ofr-device.workspace = true
+ofr-fs.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+ofr-device = { workspace = true, features = ["mock"] }
+ofr-fat.workspace = true
+ofr-exfat.workspace = true
+ofr-testfs.workspace = true
+tempfile = "3"
+
+[lints]
+workspace = true

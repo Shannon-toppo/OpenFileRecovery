@@ -303,3 +303,108 @@ fn carve_dry_run_lists_without_writing() {
     assert!(text.contains("64x48"), "{text}");
     assert!(!dest.exists(), "--dry-run なのに出力先が作られている");
 }
+
+#[test]
+fn copy_expands_an_image_into_a_mirror_tree() {
+    let dir = tempfile::tempdir().unwrap();
+    let scenario = scenarios::fat32_deleted();
+    let image = write_image(dir.path(), "fat32.img", &scenario);
+    let dest = dir.path().join("mirror");
+
+    let output = ofr(&["copy", image.to_str().unwrap(), dest.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(EXIT_OK), "{}", stdout(&output));
+
+    let text = stdout(&output);
+    assert!(text.contains("ファイルシステムを直読みして展開"), "{text}");
+    assert!(text.contains("コピー: 3 件"), "{text}");
+
+    // 生きているファイルがフォルダ構造ごと、中身も一致して並ぶ。
+    for expected in scenario.files.iter().filter(|f| !f.deleted) {
+        let mut path = dest.clone();
+        for component in expected.path.split('/').filter(|s| !s.is_empty()) {
+            path.push(component);
+        }
+        assert_eq!(
+            std::fs::read(&path).unwrap_or_else(|e| panic!("{} が無い: {e}", path.display())),
+            expected.data,
+            "{} の中身が一致しない",
+            expected.path
+        );
+    }
+    // 削除済みは対象外 (それは `ofr restore` の仕事)。
+    assert!(!dest.join("DOCS/NOTES.TXT").exists());
+
+    // レポートは JSON と人間向けテキストの 2 つ。
+    let json = std::fs::read_to_string(dest.join("ofr-copy-report.json")).unwrap();
+    assert!(json.contains("\"status\": \"copied\""), "{json}");
+    assert!(json.contains("\"complete\": true"), "{json}");
+    let summary = std::fs::read_to_string(dest.join("ofr-copy-report.txt")).unwrap();
+    assert!(summary.contains("コピー済み: 3 件"), "{summary}");
+}
+
+#[test]
+fn copy_can_include_deleted_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    let scenario = scenarios::exfat_deleted();
+    let image = write_image(dir.path(), "exfat.img", &scenario);
+    let dest = dir.path().join("mirror");
+
+    let output = ofr(&[
+        "copy",
+        image.to_str().unwrap(),
+        dest.to_str().unwrap(),
+        "--include-deleted",
+    ]);
+    assert_eq!(output.status.code(), Some(EXIT_OK), "{}", stdout(&output));
+
+    // exFAT は削除しても名前が欠けないので、元の場所にそのまま戻る。
+    let notes = scenario.file("/DOCS/NOTES.TXT").unwrap();
+    assert_eq!(
+        std::fs::read(dest.join("DOCS/NOTES.TXT")).unwrap(),
+        notes.data
+    );
+}
+
+#[test]
+fn copy_dry_run_lists_a_mounted_folder_without_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("volume");
+    std::fs::create_dir_all(root.join("DCIM")).unwrap();
+    std::fs::write(root.join("DCIM/a.jpg"), vec![1u8; 2048]).unwrap();
+    let dest = dir.path().join("mirror");
+
+    let output = ofr(&[
+        "copy",
+        root.to_str().unwrap(),
+        dest.to_str().unwrap(),
+        "--dry-run",
+    ]);
+    assert_eq!(output.status.code(), Some(EXIT_OK), "{}", stdout(&output));
+
+    let text = stdout(&output);
+    assert!(
+        text.contains("OS のファイル API で読む論理コピー"),
+        "{text}"
+    );
+    assert!(text.contains("/DCIM/a.jpg"), "{text}");
+    assert!(!dest.exists(), "--dry-run なのに宛先が作られている");
+}
+
+#[test]
+fn copy_refuses_a_destination_on_the_source_device() {
+    // PLAN.md 6章 2項。マウント済みフォルダのコピーでは、宛先が同じディスク上に
+    // あれば止める (テンポラリの中は復旧元も宛先も同じディスクなので必ず引っかかる)。
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("volume");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), b"x").unwrap();
+
+    let output = ofr(&[
+        "copy",
+        root.to_str().unwrap(),
+        dir.path().join("mirror").to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("同じデバイス上"), "{stderr}");
+}
