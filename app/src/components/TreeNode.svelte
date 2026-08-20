@@ -38,14 +38,30 @@
   let partial = $derived(!checked && node.fileIds.some((id) => selected[id]));
 
   // 何を疑うべきかを 1 行で伝える (PLAN.md 5.3)。
-  function concerns(entry: EntryDto): string[] {
+  // 一覧では短い名前だけを出し、詳しい説明はマウスを乗せたときに見せる。
+  function concerns(entry: EntryDto): { label: string; help: string }[] {
     const c = entry.concerns;
-    const out: string[] = [];
-    if (c.contiguousAssumed) out.push($t("results.concerns.contiguous"));
+    const out: { label: string; help: string }[] = [];
+    if (c.contiguousAssumed)
+      out.push({
+        label: $t("results.concerns.contiguous"),
+        help: $t("results.concernHelp.contiguous"),
+      });
     if (c.conflictingClusters > 0)
-      out.push($t("results.concerns.conflicting", { count: c.conflictingClusters }));
-    if (c.namePartial) out.push($t("results.concerns.partialName"));
-    if (c.truncated) out.push($t("results.concerns.truncated"));
+      out.push({
+        label: $t("results.concerns.conflicting", { count: c.conflictingClusters }),
+        help: $t("results.concernHelp.conflicting"),
+      });
+    if (c.namePartial)
+      out.push({
+        label: $t("results.concerns.partialName"),
+        help: $t("results.concernHelp.partialName"),
+      });
+    if (c.truncated)
+      out.push({
+        label: $t("results.concerns.truncated"),
+        help: $t("results.concernHelp.truncated"),
+      });
     return out;
   }
 </script>
@@ -86,7 +102,11 @@
 
   {#if node.entry && node.entry.kind === "file" && concerns(node.entry).length > 0}
     <div class="concerns muted" style="padding-left: {depth * 16 + 46}px">
-      {concerns(node.entry).join(" · ")}
+      {#each concerns(node.entry) as concern, i (i)}
+        {#if i > 0}<span aria-hidden="true"> · </span>{/if}<span title={concern.help}
+          >{concern.label}</span
+        >
+      {/each}
     </div>
   {/if}
 

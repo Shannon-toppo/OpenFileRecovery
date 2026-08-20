@@ -280,6 +280,22 @@ impl Core {
     }
 }
 
+/// 吸い出しの出力先に、再開用の mapfile があるか。
+///
+/// GUI は開始前にこれを見て「続きから進む」と伝える。中断した吸い出しを
+/// 最初からやり直すものと誤解されると、壊れかけメディアを丸ごと読み直す
+/// ことになる(PLAN.md 6章 4項)。
+pub fn resume_available(output: &std::path::Path) -> bool {
+    mapfile_path(output).is_file()
+}
+
+/// 吸い出しの mapfile の既定パス(`<出力>.map`)。
+pub fn mapfile_path(output: &std::path::Path) -> std::path::PathBuf {
+    let mut p = output.to_path_buf().into_os_string();
+    p.push(".map");
+    std::path::PathBuf::from(p)
+}
+
 /// 開始イベントに載せる復旧元と出力先。
 fn describe(request: &JobRequest) -> (String, Option<String>) {
     match request {

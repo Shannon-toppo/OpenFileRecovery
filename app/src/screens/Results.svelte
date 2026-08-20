@@ -12,6 +12,9 @@
   import type { Node } from "../components/TreeNode.svelte";
 
   let isCarve = $derived(app.job.result?.kind === "carve" || app.mode === "carve");
+  // 解析結果に付いてきたボリューム情報。ジオメトリが推定なら信頼度が落ちるので、
+  // それを日本語ベタ書きのメモではなく、翻訳できる文言で出す。
+  let volume = $derived(app.job.result?.kind === "scan" ? app.job.result.volume : null);
 
   let query = $state("");
   let status = $state<EntryStatus | "all">("all");
@@ -160,6 +163,19 @@
       <ErrorBox {error} />
     {/if}
 
+    {#if volume}
+      <div class="row wrap muted" style="gap: 12px; font-size: 12px">
+        <span>{volume.fs}{volume.label ? ` "${volume.label}"` : ""}</span>
+        <span>{$t("scan.cluster")} {bytes(volume.clusterSize)}</span>
+        <span
+          class:warn={volume.bootSource !== "primary"}
+          title={$t(`scan.bootSource.${volume.bootSource}`)}
+        >
+          {$t(`scan.bootSource.${volume.bootSource}`)}
+        </span>
+      </div>
+    {/if}
+
     {#if isCarve}
       <div class="notice">{$t("results.carved.noNames")}</div>
       <div class="scroll panel" style="flex: 1">
@@ -296,5 +312,9 @@
 
   .card.active {
     border-color: var(--accent);
+  }
+
+  .warn {
+    color: var(--warn);
   }
 </style>

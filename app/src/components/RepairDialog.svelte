@@ -115,6 +115,15 @@
     {#if report}
       <div class="col" style="gap: 8px">
         <h3>{$t("repair.result")}</h3>
+
+        <!-- 期待値の但し書きは、コアからの日本語ではなく画面側の文言で出す
+             (英語に切り替えたときにここだけ日本語になるのを避ける)。 -->
+        {#if report.format === "mp4" && !report.reference}
+          <div class="notice warn">{$t("repair.mp4Expectation")}</div>
+        {/if}
+        {#if report.verification === "container"}
+          <div class="notice">{$t("repair.videoVerify")}</div>
+        {/if}
         <div class="row wrap" style="gap: 18px">
           <span class="stat">
             <b>{$t(`repair.status.${report.status}`)}</b><span>{$t("common.status")}</span>

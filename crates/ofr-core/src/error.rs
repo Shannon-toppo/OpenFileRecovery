@@ -63,7 +63,7 @@ pub enum CoreError {
     Repair(#[from] ofr_repair::RepairError),
 
     /// 出力の書き込みなど、こちら側の IO エラー。
-    #[error("{path} の書き込みに失敗: {source}")]
+    #[error("{path} の書き込みに失敗しました: {source}")]
     Io {
         /// 対象のパス。
         path: PathBuf,
@@ -73,11 +73,13 @@ pub enum CoreError {
     },
 
     /// 起動ディスクを復旧元にしようとした(PLAN.md 6章 3項)。
-    #[error("{0} は起動ディスクなので復旧元にできない")]
+    #[error("{0} は起動ディスクなので復旧元にできません")]
     SystemDisk(String),
 
     /// 出力先が復旧元と同じデバイス上にある(PLAN.md 6章 2項)。
-    #[error("出力先 {dest} は復旧元 {device} と同じデバイス上にある。別のディスクを指定すること")]
+    #[error(
+        "出力先 {dest} は復旧元 {device} と同じデバイス上にあります。別のディスクを指定してください"
+    )]
     SameDevice {
         /// 復旧元のデバイス ID。
         device: String,
@@ -87,8 +89,8 @@ pub enum CoreError {
 
     /// FAT32 / exFAT のボリュームが見つからない。
     #[error(
-        "FAT32 / exFAT のボリュームが見つからない(候補 {candidates} 件)。\
-         位置が分かっているならオフセットを直接指定する"
+        "FAT32 / exFATのボリュームが見つかりません(候補{candidates}件)。\
+            位置が分かっている場合は、オフセットを直接指定してください"
     )]
     NoFilesystem {
         /// 調べたパーティション候補の数。
@@ -100,7 +102,7 @@ pub enum CoreError {
     BadRequest(String),
 
     /// 参照されたセッションがない(GUI の状態がずれている)。
-    #[error("解析結果が見つからない (セッション {0})。もう一度スキャンすること")]
+    #[error("解析結果が見つかりません (セッション{0})。もう一度スキャンしてください")]
     NoSession(u64),
 }
 

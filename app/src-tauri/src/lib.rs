@@ -63,6 +63,14 @@ fn relaunch_elevated(app: AppHandle) -> ApiResult<()> {
     Ok(())
 }
 
+/// 出力先に再開用の記録 (mapfile) があるか。
+///
+/// 中断した吸い出しを「最初からやり直す」と誤解させないため、開始前に伝える。
+#[tauri::command]
+fn resume_available(output: String) -> bool {
+    ofr_core::resume_available(std::path::Path::new(&output))
+}
+
 /// ジョブを始める。戻り値はジョブ ID。
 #[tauri::command]
 fn start_job(app: AppHandle, core: State<'_, Arc<Core>>, request: JobRequest) -> ApiResult<JobId> {
@@ -138,6 +146,7 @@ pub fn run() {
             list_devices,
             privileges,
             relaunch_elevated,
+            resume_available,
             start_job,
             cancel_job,
             entries,

@@ -207,7 +207,10 @@ fn unknown_volumes_are_reported_clearly() {
     let output = ofr(&["scan", path.to_str().unwrap()]);
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("見つからない"), "{stderr}");
+    // 文言そのものではなく、伝えるべき 2 点で確かめる。何が無いのか
+    // (ボリューム) と、次に何をすればいいのか (オフセット指定)。
+    assert!(stderr.contains("ボリューム"), "{stderr}");
+    assert!(stderr.contains("オフセット"), "{stderr}");
 }
 
 /// カービング用に、ファイルシステムのない生イメージを組み立てる。

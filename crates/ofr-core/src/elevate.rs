@@ -111,7 +111,7 @@ mod sys {
         if !status.success() {
             // 利用者がパスワード入力をやめた場合もここに来る。
             return Err(CoreError::BadRequest(
-                "管理者権限での起動をやめた(またはパスワードが違う)".to_string(),
+                "管理者権限で起動できません(またはパスワードが違います)".to_string(),
             ));
         }
         Ok(())
@@ -158,8 +158,7 @@ mod sys {
         // インストール版は manifest の requireAdministrator で起動時に昇格する。
         // 開発ビルドを直接叩いた場合は、管理者として実行し直してもらう。
         Err(CoreError::BadRequest(
-            "Windows では管理者としてアプリを起動し直すこと \
-             (インストール版は起動時に UAC が出る)"
+            "Windowsでは管理者としてアプリを起動し直してください (インストール版は起動時にUACが出ます)"
                 .to_string(),
         ))
     }
@@ -174,7 +173,7 @@ mod sys {
     }
 
     pub(super) fn relaunch_elevated() -> Result<()> {
-        Err(CoreError::BadRequest("この OS では未対応".to_string()))
+        Err(CoreError::BadRequest("このOSでは未対応です".to_string()))
     }
 }
 
@@ -182,16 +181,14 @@ mod sys {
 pub fn permission_hint(source: &str) -> String {
     match platform() {
         "macos" => format!(
-            "{source} を読むには root 権限が要る。\
-             「管理者で実行し直す」を押すか、ターミナルで \
-             `sudo ofr image {source} <出力先>` を実行してイメージを取り、\
-             そのイメージを開くこと。"
+            "{source} を読み込むにはroot権限が必要です。「管理者で実行し直す」を押すか、\
+                ターミナルで`sudo ofr image {source} <出力先>`を実行してイメージを取り、\
+                そのイメージを開いてください。"
         ),
         "windows" => format!(
-            "{source} を読むには管理者権限が要る。\
-             アプリを右クリックして「管理者として実行」で開き直すこと。"
+            "{source} を読むには管理者権限が必要です。アプリを右クリックして「管理者として実行」で開き直してください。"
         ),
-        _ => format!("{source} を読む権限がない。"),
+        _ => format!("{source} を読む権限がありません。"),
     }
 }
 
@@ -201,8 +198,7 @@ impl CoreError {
         match self.code() {
             crate::ErrorCode::PermissionDenied => Some(permission_hint(source)),
             crate::ErrorCode::Busy => Some(format!(
-                "{source} は使用中で開けない。macOS なら「開始前にアンマウントする」を\
-                 有効にして実行し直すこと。"
+                "{source} は使用中です。macOSなら「開始前にアンマウントする」を有効にして実行し直してください。"
             )),
             _ => None,
         }

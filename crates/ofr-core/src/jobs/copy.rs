@@ -149,20 +149,20 @@ fn copy(ctx: &JobCtx, src: &dyn CopySource, req: &CopyRequest) -> Result<(Outcom
         }
         Err(e) => ctx.note(
             NoteLevel::Warn,
-            format!("レポートを書けなかった: {}", e.full_message()),
+            format!("レポートを作成できませんでした: {}", e.full_message()),
         ),
     }
 
     if report.summary.partial > 0 || report.summary.failed > 0 {
         ctx.note(
             NoteLevel::Warn,
-            "読めなかった部分はゼロで埋めてある。開けないファイルは修復を試すこと。",
+            "読めなかった部分はゼロで埋めています。開けないファイルは修復を試してください。",
         );
     }
     if report.summary.cancelled {
         ctx.note(
             NoteLevel::Info,
-            "中断した。同名の扱いを「飛ばす」にして実行し直すと続きから進む。",
+            "中断しました。同名の扱いを「飛ばす」にして実行し直すと続きから進みます。",
         );
     }
 
