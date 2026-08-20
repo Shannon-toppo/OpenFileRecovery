@@ -46,6 +46,8 @@ export interface JobState {
   files: { path: string; status: string }[];
   /** 切り出したファイルの数。 */
   carved: number;
+  /** 中断を指示したか。応答しないデバイスでは指示が届かないことがある。 */
+  cancelRequested: boolean;
 }
 
 function emptyJob(): JobState {
@@ -60,6 +62,7 @@ function emptyJob(): JobState {
     error: null,
     files: [],
     carved: 0,
+    cancelRequested: false,
   };
 }
 
@@ -165,5 +168,9 @@ export async function dropSession() {
 
 /** 走っているジョブを止める。書き出し済みのものは残る。 */
 export async function stopJob() {
-  if (app.job.id !== null) await api.cancelJob(app.job.id);
+  if (app.job.id === null) return;
+  // 応答しないデバイスでは、読み込みから戻るまでこの指示は届かない。
+  // 指示を出したことを覚えておいて、届いていないなら画面でそう言う。
+  app.job.cancelRequested = true;
+  await api.cancelJob(app.job.id);
 }

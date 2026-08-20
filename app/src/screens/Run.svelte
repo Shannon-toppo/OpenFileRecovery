@@ -56,7 +56,7 @@
     </div>
   {:else if job.running}
     <div class="panel">
-      <ProgressPanel progress={job.progress} kind={job.kind} />
+      <ProgressPanel progress={job.progress} kind={job.kind} cancelRequested={job.cancelRequested} />
     </div>
     <div class="row">
       <button class="danger" onclick={stopJob}>{$t("common.cancel")}</button>

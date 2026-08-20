@@ -126,7 +126,9 @@
       "nonScraped": "Not scraped"
     },
     "stalled": "Waiting for the device ({secs}s)",
-    "stalledHint": "This is normal for failing media. Wait it out, or stop — everything read so far is kept."
+    "stalledHint": "This is normal for failing media. Wait it out, or stop — everything read so far is kept.",
+    "cancelStuck": "Cannot stop: the device is not responding",
+    "cancelStuckHint": "The read is stuck, so the stop request cannot get through. Physically unplugging the media releases it. Everything read so far is saved, and running again with the same settings resumes from there."
   },
   "image": {
     "title": "Imaging settings",
