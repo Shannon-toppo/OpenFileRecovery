@@ -123,14 +123,14 @@ pub(crate) fn run(ctx: &JobCtx, req: CarveRequest) -> Result<(Outcome, JobResult
         Ok(()) => summary.report_path = Some(report_path.display().to_string()),
         Err(e) => ctx.note(
             NoteLevel::Warn,
-            format!("レポートを書けなかった: {}", e.full_message()),
+            format!("レポートを作成できませんでした: {}", e.full_message()),
         ),
     }
 
     if s.found > 0 {
         ctx.note(
             NoteLevel::Info,
-            "切り出したファイルは元の名前を持たない。中身を確認してから整理すること。",
+            "切り出したファイルは元の名前を持ちません。中身を確認してから整理してください。",
         );
     }
 

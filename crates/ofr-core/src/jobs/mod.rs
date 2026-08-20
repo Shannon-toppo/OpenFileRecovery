@@ -92,8 +92,8 @@ pub(crate) fn warn_if_live_device(ctx: &JobCtx, device: &dyn ofr_device::Device)
     if device.info().kind != ofr_device::DeviceKind::ImageFile {
         ctx.note(
             NoteLevel::Warn,
-            "デバイスを直接読んでいる。読み出しが不安定なメディアなら、\
-             先にイメージを取り、そのイメージを開くこと。",
+            "デバイスを直接読んでいます。読み出しが不安定なメディアの場合は、\
+             先にイメージを取り、そのイメージを開いてください。",
         );
     }
 }

@@ -139,7 +139,7 @@
     "blockSize": "Read size",
     "unmount": "Unmount before starting (macOS)",
     "sameDiskWarning": "The destination must be on a different disk from the source.",
-    "overwrite": "An image with that name already exists. Overwrite it?",
+    "overwrite": "Overwrite an image with the same name",
     "resume": "Found a resume record. Continuing from there.",
     "result": "Imaging result",
     "analyzeImage": "Scan this image",
@@ -287,6 +287,6 @@
   "safety": {
     "readOnly": "Never writes to the source device",
     "imageFirst": "For failing media, image it first and work from the image. Every read can make it worse.",
-    "liveDevice": "Reading the device directly"
+    "liveDevice": "This will read the device directly"
   }
 }

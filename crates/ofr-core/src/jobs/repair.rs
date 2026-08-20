@@ -40,20 +40,8 @@ pub(crate) fn run(ctx: &JobCtx, req: RepairRequest) -> Result<(Outcome, JobResul
     for issue in &report.issues {
         ctx.note(NoteLevel::Warn, issue.clone());
     }
-    if report.format == RepairFormat::Mp4 && req.reference.is_none() {
-        ctx.note(
-            NoteLevel::Warn,
-            "参照ファイルなしの MP4 修復は、市販ソフトを含めて成功率が大きく落ちる。\
-             同じ機器・同じ設定で撮った正常なファイルを渡すと精度が上がる。",
-        );
-    }
-    if report.verification == ofr_repair::Verification::Container {
-        ctx.note(
-            NoteLevel::Info,
-            "動画の自動検証はコンテナ整合性まで。実際に再生できるかは\
-             プレイヤーで確かめること。",
-        );
-    }
+    // MP4 の期待値と動画検証の但し書きは、GUI が report.format と
+    // report.verification を見て翻訳済みの文言で出す。ここでは重ねない。
 
     let complete = matches!(report.status, RepairStatus::Intact | RepairStatus::Repaired);
     Ok((

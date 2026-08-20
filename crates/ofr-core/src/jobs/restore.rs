@@ -49,7 +49,7 @@ pub(crate) fn run(ctx: &JobCtx, req: RestoreRequest) -> Result<(Outcome, JobResu
         .ok_or(CoreError::NoSession(req.session))?;
     let Session::Scan(scan) = &*session else {
         return Err(CoreError::BadRequest(
-            "このセッションは解析結果ではない".to_string(),
+            "このセッションは解析結果ではありません".to_string(),
         ));
     };
 
@@ -59,7 +59,7 @@ pub(crate) fn run(ctx: &JobCtx, req: RestoreRequest) -> Result<(Outcome, JobResu
     let targets = scan.expand(&req.entries);
     if targets.is_empty() {
         return Err(CoreError::BadRequest(
-            "復元する項目が 1 つも選ばれていない".to_string(),
+            "復元する項目が選択されていません".to_string(),
         ));
     }
 
@@ -198,15 +198,14 @@ pub(crate) fn run(ctx: &JobCtx, req: RestoreRequest) -> Result<(Outcome, JobResu
         Ok(()) => summary.report_json = Some(report_path.display().to_string()),
         Err(e) => ctx.note(
             NoteLevel::Warn,
-            format!("レポートを書けなかった: {}", e.full_message()),
+            format!("レポートを作成できませんでした: {}", e.full_message()),
         ),
     }
 
     if summary.partial > 0 || summary.failed > 0 {
         ctx.note(
             NoteLevel::Warn,
-            "欠けたファイルは、断片化していたか領域が上書きされている。\
-             開けない場合は修復を試すこと。",
+            "欠けたファイルは、断片化していたか領域が上書きされています。開けない場合は修復を試してください。",
         );
     }
 
