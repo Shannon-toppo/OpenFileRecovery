@@ -4,7 +4,7 @@
 //! 書式を合わせてある(PLAN.md 5.2)。書式は公開されているマニュアルの記述に基づく。
 //!
 //! ```text
-//! # Mapfile. Created by Open File Recovery 0.0.1
+//! # Mapfile. Created by Open File Recovery 0.0.2
 //! # current_pos  current_status  current_pass
 //! 0x00001000     ?               1
 //! #      pos        size  status

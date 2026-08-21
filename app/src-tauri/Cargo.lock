@@ -2308,7 +2308,7 @@ dependencies = [
 
 [[package]]
 name = "ofr-carve"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "memchr",
  "ofr-device",
@@ -2318,7 +2318,7 @@ dependencies = [
 
 [[package]]
 name = "ofr-copy"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ofr-device",
  "ofr-fs",
@@ -2328,7 +2328,7 @@ dependencies = [
 
 [[package]]
 name = "ofr-core"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "libc",
  "ofr-carve",
@@ -2348,7 +2348,7 @@ dependencies = [
 
 [[package]]
 name = "ofr-device"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "libc",
  "thiserror 2.0.20",
@@ -2358,7 +2358,7 @@ dependencies = [
 
 [[package]]
 name = "ofr-exfat"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ofr-device",
  "ofr-fs",
@@ -2368,7 +2368,7 @@ dependencies = [
 
 [[package]]
 name = "ofr-fat"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ofr-device",
  "ofr-fs",
@@ -2378,7 +2378,7 @@ dependencies = [
 
 [[package]]
 name = "ofr-fs"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ofr-device",
  "thiserror 2.0.20",
@@ -2387,7 +2387,7 @@ dependencies = [
 
 [[package]]
 name = "ofr-gui"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ofr-core",
  "serde",
@@ -2402,7 +2402,7 @@ dependencies = [
 
 [[package]]
 name = "ofr-image"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "ofr-device",
  "thiserror 2.0.20",
@@ -2411,7 +2411,7 @@ dependencies = [
 
 [[package]]
 name = "ofr-repair"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "crc32fast",
  "image",

@@ -2,7 +2,8 @@
   "app": {
     "title": "Open File Recovery",
     "subtitle": "Data recovery for USB drives and SD cards",
-    "language": "Language"
+    "language": "Language",
+    "version": "Version"
   },
   "steps": {
     "device": "Device",
