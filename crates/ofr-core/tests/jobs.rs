@@ -460,3 +460,41 @@ fn imaging_finishes_and_reports_the_result() {
     assert_eq!(json["result"]["kind"], "image");
     assert_eq!(json["result"]["complete"], true);
 }
+
+/// 出力先の状態を、始める前に正しく言えること。
+///
+/// 「上書きになるのか続きからになるのか」を取り違えると、中断した吸い出しを
+/// 丸ごと読み直させてしまう。壊れかけメディアではそれ自体が損害になる。
+#[test]
+fn output_state_tells_resume_from_overwrite() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("usb.img");
+
+    // まだ何もない。
+    let state = ofr_core::output_state(&output);
+    assert!(!state.exists);
+    assert!(!state.resumable);
+
+    // 途中まで吸い出したデバイスを作る。後半は読めない。
+    let device = ofr_device::MockDevice::builder(4 << 20)
+        .pattern()
+        .bad_range(2 << 20, 2 << 20)
+        .build();
+    let summary = ofr_image::Imager::new(&device)
+        .run(&output, Some(&ofr_core::mapfile_path(&output)))
+        .unwrap();
+    assert!(!summary.is_complete(), "全部読めてしまっては試験にならない");
+
+    // イメージも mapfile もあるので「続きから」。取得済みバイト数も言える。
+    let state = ofr_core::output_state(&output);
+    assert!(state.exists);
+    assert!(state.resumable);
+    assert_eq!(state.rescued, summary.rescued);
+    assert_eq!(state.total, 4 << 20);
+
+    // mapfile だけ消すと、続きからにはできない = 取り直しになる。
+    std::fs::remove_file(ofr_core::mapfile_path(&output)).unwrap();
+    let state = ofr_core::output_state(&output);
+    assert!(state.exists);
+    assert!(!state.resumable);
+}

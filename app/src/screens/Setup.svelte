@@ -1,33 +1,43 @@
 <script lang="ts">
-  import { open, save } from "@tauri-apps/plugin-dialog";
+  import { open } from "@tauri-apps/plugin-dialog";
 
-  import { resumeAvailable } from "../lib/api";
+  import { outputState } from "../lib/api";
+  import { bytes } from "../lib/format";
   import { t } from "../lib/i18n";
   import { app, runJob } from "../lib/state.svelte";
   import type { FsChoice, JobRequest } from "../lib/types";
 
-  // 吸い出し
-  let imageOutput = $state("");
+  // 吸い出し。
+  //
+  // 保存ダイアログは使わない。あれは「置き換えますか?」しか聞けないので、
+  // 中断した吸い出しの続きをやりたいときに逆のことを尋ねてしまう。
+  // フォルダと名前を別々に受け取り、何が起きるかはこちらで判断して伝える。
+  let imageFolder = $state("");
+  let imageName = $state("recovered.img");
   let imageOverwrite = $state(false);
-  /** 出力先に再開用の記録 (.map) があるか。 */
-  let resumable = $state(false);
+  let output = $derived(imageFolder ? `${imageFolder}/${imageName}` : "");
 
-  // 出力先が決まったら、続きから再開できるかを調べて先に伝える。
-  // 中断した吸い出しを「最初からやり直す」と誤解させないため。
+  /** 出力先の状態 (既存か、続きから進めるか)。 */
+  let dest = $state({ exists: false, resumable: false, rescued: 0, total: 0 });
+
+  // 出力先が決まったら、上書きになるのか続きからになるのかを先に伝える。
+  // 中断した吸い出しを「最初からやり直す」と誤解されると、壊れかけメディアを
+  // 丸ごと読み直すことになる (PLAN.md 6章 4項)。
   $effect(() => {
-    const path = imageOutput;
+    const path = output;
     if (!path) {
-      resumable = false;
+      dest = { exists: false, resumable: false, rescued: 0, total: 0 };
       return;
     }
     let cancelled = false;
-    resumeAvailable(path)
-      .then((yes) => {
-        if (!cancelled) resumable = yes;
+    outputState(path)
+      .then((state) => {
+        if (cancelled) return;
+        dest = state;
+        // 続きからなら上書きの了承は要らない。取り直すときだけ聞く。
+        if (state.resumable) imageOverwrite = false;
       })
-      .catch(() => {
-        if (!cancelled) resumable = false;
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -54,26 +64,13 @@
 
   let ready = $derived(
     app.mode === "image"
-      ? imageOutput !== ""
+      ? output !== "" && imageName !== "" && (!dest.exists || dest.resumable || imageOverwrite)
       : app.mode === "copy"
         ? copyDest !== ""
         : app.mode === "carve"
           ? carveOutput !== ""
           : true,
   );
-
-  async function chooseImageOutput() {
-    const path = await save({
-      title: $t("image.output"),
-      defaultPath: "recovered.img",
-      filters: [{ name: "Disk image", extensions: ["img"] }],
-    });
-    if (typeof path === "string") {
-      imageOutput = path;
-      // 保存ダイアログが上書きの確認を済ませているので、そのまま進めてよい。
-      imageOverwrite = true;
-    }
-  }
 
   async function chooseFolder(): Promise<string | null> {
     const path = await open({ directory: true, multiple: false });
@@ -92,7 +89,7 @@
         request = {
           kind: "image",
           source,
-          output: imageOutput,
+          output,
           retries,
           blockSize,
           unmount,
@@ -133,20 +130,32 @@
   {#if app.mode === "image"}
     <div class="panel col">
       <label class="col" style="gap: 4px">
-        <span>{$t("image.output")}</span>
+        <span>{$t("image.folder")}</span>
         <div class="row">
-          <input class="grow mono" bind:value={imageOutput} placeholder="recovered.img" />
-          <button onclick={chooseImageOutput}>{$t("common.choose")}</button>
+          <input class="grow mono" bind:value={imageFolder} />
+          <button onclick={async () => (imageFolder = (await chooseFolder()) ?? imageFolder)}>
+            {$t("image.chooseFolder")}
+          </button>
         </div>
       </label>
-      <span class="muted">{$t("image.mapfileHint")}</span>
-      {#if resumable}
-        <div class="notice">{$t("image.resume")}</div>
-      {/if}
-      <label class="row">
-        <input type="checkbox" bind:checked={imageOverwrite} />
-        <span>{$t("image.overwrite")}</span>
+      <label class="col" style="gap: 4px">
+        <span>{$t("image.fileName")}</span>
+        <input class="mono" bind:value={imageName} placeholder="recovered.img" />
       </label>
+      <span class="muted">{$t("image.mapfileHint")}</span>
+
+      {#if dest.resumable}
+        <div class="notice">{$t("image.willResume", { rescued: bytes(dest.rescued) })}</div>
+      {:else if dest.exists}
+        <div class="notice warn col" style="gap: 6px">
+          <span>{$t("image.willOverwrite")}</span>
+          <label class="row">
+            <input type="checkbox" bind:checked={imageOverwrite} />
+            <span>{$t("image.overwriteConfirm")}</span>
+          </label>
+        </div>
+      {/if}
+
       <div class="notice warn">{$t("image.sameDiskWarning")}</div>
 
       <div class="row wrap" style="gap: 18px">
