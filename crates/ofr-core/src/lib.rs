@@ -280,13 +280,41 @@ impl Core {
     }
 }
 
-/// 吸い出しの出力先に、再開用の mapfile があるか。
+/// 吸い出しの出力先の状態。GUI が開始前に「何が起きるか」を伝えるのに使う。
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputState {
+    /// 同じ名前のイメージが既にあるか。
+    pub exists: bool,
+    /// 再開用の記録 (mapfile) があるか。
+    ///
+    /// 真なら上書きではなく**続きから**になる。既存のイメージは切り詰めずに開き、
+    /// 取得済みの領域は読み直さない。
+    pub resumable: bool,
+    /// 前回までに取得できていたバイト数。
+    pub rescued: u64,
+    /// デバイスの全長(記録があれば)。
+    pub total: u64,
+}
+
+/// 吸い出しの出力先を調べる。
 ///
-/// GUI は開始前にこれを見て「続きから進む」と伝える。中断した吸い出しを
-/// 最初からやり直すものと誤解されると、壊れかけメディアを丸ごと読み直す
-/// ことになる(PLAN.md 6章 4項)。
-pub fn resume_available(output: &std::path::Path) -> bool {
-    mapfile_path(output).is_file()
+/// 中断した吸い出しを「最初からやり直す」と誤解されると、壊れかけメディアを
+/// 丸ごと読み直すことになる(PLAN.md 6章 4項)。開始前に、続きからになるのか
+/// 上書きになるのかをはっきりさせるためのもの。
+pub fn output_state(output: &std::path::Path) -> OutputState {
+    let map = mapfile_path(output);
+    let mut state = OutputState {
+        exists: output.is_file(),
+        resumable: map.is_file(),
+        ..OutputState::default()
+    };
+    // 取得済みバイト数まで見せる。「9 時間ぶんが残っているか」が一目で分かる。
+    if let Ok(loaded) = ofr_image::MapFile::load(&map) {
+        state.rescued = loaded.blocks.rescued();
+        state.total = loaded.blocks.total();
+    }
+    state
 }
 
 /// 吸い出しの mapfile の既定パス(`<出力>.map`)。

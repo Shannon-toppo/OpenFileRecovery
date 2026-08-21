@@ -133,17 +133,21 @@
   "image": {
     "title": "Imaging settings",
     "output": "Where to write the image",
-    "chooseOutput": "Choose destination…",
     "mapfileHint": "A .map file is written alongside it. If you stop, you can resume from there.",
     "retries": "Retries per bad sector",
     "blockSize": "Read size",
     "unmount": "Unmount before starting (macOS)",
     "sameDiskWarning": "The destination must be on a different disk from the source.",
-    "overwrite": "Overwrite an image with the same name",
     "resume": "Found a resume record. Picking up where it left off.",
     "result": "Imaging result",
     "analyzeImage": "Scan this image",
-    "incomplete": "Some areas could not be read. Running again later with the same settings retries only those areas."
+    "incomplete": "Some areas could not be read. Running again later with the same settings retries only those areas.",
+    "folder": "Destination folder",
+    "fileName": "File name",
+    "chooseFolder": "Choose a folder…",
+    "willResume": "This will pick up where it left off ({rescued} already rescued). Areas already read are not read again.",
+    "willOverwrite": "An image with that name already exists. Starting will image it again from scratch.",
+    "overwriteConfirm": "Image the device again, replacing the existing file"
   },
   "scan": {
     "options": "How to search",

@@ -11,6 +11,7 @@ import type {
   EntryQuery,
   JobEvent,
   JobRequest,
+  OutputState,
   PreviewDto,
   PrivilegeDto,
 } from "./types";
@@ -46,9 +47,9 @@ export const relaunchElevated = () => call<void>("relaunch_elevated");
 /** フルディスクアクセスの設定画面を開く (macOS)。 */
 export const openPrivacySettings = () => call<void>("open_privacy_settings");
 
-/** 出力先に再開用の記録 (.map) があるか。 */
-export const resumeAvailable = (output: string) =>
-  call<boolean>("resume_available", { output });
+/** 吸い出しの出力先を調べる (既存か、続きから進めるか)。 */
+export const outputState = (output: string) =>
+  call<OutputState>("output_state", { output });
 
 /** ジョブを始める。戻り値はジョブ ID。 */
 export const startJob = (request: JobRequest) => call<number>("start_job", { request });

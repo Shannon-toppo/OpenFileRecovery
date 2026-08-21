@@ -229,6 +229,13 @@ export interface RepairReportDto {
   elapsedSecs: number;
 }
 
+export interface OutputState {
+  exists: boolean;
+  resumable: boolean;
+  rescued: number;
+  total: number;
+}
+
 export interface PreviewDto {
   name: string;
   mime: string;
