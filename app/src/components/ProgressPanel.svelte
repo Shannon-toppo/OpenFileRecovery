@@ -4,7 +4,16 @@
   import type { JobKind, ProgressDto } from "../lib/types";
   import RegionMap from "./RegionMap.svelte";
 
-  let { progress, kind }: { progress: ProgressDto | null; kind: JobKind | null } = $props();
+  let {
+    progress,
+    kind,
+    cancelRequested = false,
+  }: {
+    progress: ProgressDto | null;
+    kind: JobKind | null;
+    /** 中断を指示済みか。届いていないことを画面で言うために使う。 */
+    cancelRequested?: boolean;
+  } = $props();
 
   let imaging = $derived(kind === "image");
 
@@ -28,21 +37,32 @@
   let elapsed = $derived((progress?.elapsedSecs ?? 0) + sinceEvent);
   /** しばらくイベントが来ていない = デバイスが応答していない。 */
   let stalled = $derived(progress !== null && sinceEvent >= 3);
+  /** 中断を指示したのに、デバイスが応答しないので届いていない。 */
+  let cancelStuck = $derived(stalled && cancelRequested && sinceEvent >= 8);
+
+  // この画面が出ている間はまだ終わっていないので、100% とは言わない。
+  // 残り 0.01% が不良セクタで、そこで何時間も粘ることが実際にある。
+  let shown = $derived(Math.min(progress?.ratio ?? 0, 0.999));
 </script>
 
 <div class="col" style="gap: 12px">
   <div class="row spread">
     <b>{progress ? $t(`run.phase.${progress.phase}`) : $t("common.loading")}</b>
-    <span class="mono">{percent(progress?.ratio ?? 0)}</span>
+    <span class="mono">{percent(shown)}</span>
   </div>
 
-  <div class="bar"><div style="width: {(progress?.ratio ?? 0) * 100}%"></div></div>
+  <div class="bar"><div style="width: {shown * 100}%"></div></div>
 
   {#if progress?.current}
     <div class="muted mono truncate">{progress.current}</div>
   {/if}
 
-  {#if stalled}
+  {#if cancelStuck}
+    <div class="notice bad col" style="gap: 2px">
+      <b>{$t("run.cancelStuck")}</b>
+      <span class="muted">{$t("run.cancelStuckHint")}</span>
+    </div>
+  {:else if stalled}
     <div class="notice warn col" style="gap: 2px">
       <b>{$t("run.stalled", { secs: Math.floor(sinceEvent) })}</b>
       <span class="muted">{$t("run.stalledHint")}</span>

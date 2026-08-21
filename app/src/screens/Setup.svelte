@@ -1,6 +1,7 @@
 <script lang="ts">
   import { open, save } from "@tauri-apps/plugin-dialog";
 
+  import { resumeAvailable } from "../lib/api";
   import { t } from "../lib/i18n";
   import { app, runJob } from "../lib/state.svelte";
   import type { FsChoice, JobRequest } from "../lib/types";
@@ -8,6 +9,29 @@
   // 吸い出し
   let imageOutput = $state("");
   let imageOverwrite = $state(false);
+  /** 出力先に再開用の記録 (.map) があるか。 */
+  let resumable = $state(false);
+
+  // 出力先が決まったら、続きから再開できるかを調べて先に伝える。
+  // 中断した吸い出しを「最初からやり直す」と誤解させないため。
+  $effect(() => {
+    const path = imageOutput;
+    if (!path) {
+      resumable = false;
+      return;
+    }
+    let cancelled = false;
+    resumeAvailable(path)
+      .then((yes) => {
+        if (!cancelled) resumable = yes;
+      })
+      .catch(() => {
+        if (!cancelled) resumable = false;
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
   let retries = $state(3);
   let blockSize = $state(1 << 20);
   let unmount = $state(false);
@@ -116,6 +140,13 @@
         </div>
       </label>
       <span class="muted">{$t("image.mapfileHint")}</span>
+      {#if resumable}
+        <div class="notice">{$t("image.resume")}</div>
+      {/if}
+      <label class="row">
+        <input type="checkbox" bind:checked={imageOverwrite} />
+        <span>{$t("image.overwrite")}</span>
+      </label>
       <div class="notice warn">{$t("image.sameDiskWarning")}</div>
 
       <div class="row wrap" style="gap: 18px">
@@ -228,7 +259,10 @@
   {/if}
 
   {#if !app.source?.isImage && app.mode !== "image"}
-    <div class="notice">{$t("safety.imageFirst")}</div>
+    <div class="notice col" style="gap: 2px">
+      <b>{$t("safety.liveDevice")}</b>
+      <span class="muted">{$t("safety.imageFirst")}</span>
+    </div>
   {/if}
 
   <div class="row">

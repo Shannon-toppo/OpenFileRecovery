@@ -27,16 +27,9 @@ pub(crate) fn run(ctx: &JobCtx, req: ScanRequest) -> Result<(Outcome, JobResult)
     let fs = source::open_filesystem(&region, volume.kind)?;
     let info = VolumeDto::new(fs.volume(), volume.offset, &volume.partition.type_name);
 
-    if fs.volume().boot_source != ofr_fs::BootSource::Primary {
-        ctx.note(
-            NoteLevel::Warn,
-            format!(
-                "ブートセクタが読めなかったので {} を使った。ジオメトリが推定なら\
-                 結果の信頼度は落ちる。",
-                fs.volume().boot_source.label()
-            ),
-        );
-    }
+    // ブートセクタの入手経路は VolumeDto のコードで渡してあり、GUI が
+    // 翻訳した文言で出す。ここで日本語のメモを重ねると二重に出るうえ、
+    // 英語表示のときにここだけ日本語になる。
 
     let options = ScanOptions {
         deleted: req.deleted,
@@ -89,8 +82,8 @@ pub(crate) fn run(ctx: &JobCtx, req: ScanRequest) -> Result<(Outcome, JobResult)
     if stats.files == 0 && stats.dirs == 0 {
         ctx.note(
             NoteLevel::Warn,
-            "何も見つからなかった。ファイルシステム自体が壊れている場合は\
-             カービング(ファイル形式から探す)を試すこと。名前は戻らない。",
+            "何も見つかりません。ファイルシステム自体が壊れている場合はカービング(ファイル形式から探す)を試してください。\
+                名前は戻りません。",
         );
     }
 

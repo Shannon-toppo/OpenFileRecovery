@@ -49,9 +49,9 @@
     "startOver": "Start over"
   },
   "devices": {
-    "title": "Which device do you want to recover from?",
+    "title": "Select the device to recover from",
     "lead": "Plug in the USB drive or SD card, then press Refresh. Nothing is ever written to the source device.",
-    "empty": "No devices found. Re-insert the media and press Refresh.",
+    "empty": "No devices found. Check the connection and press Refresh",
     "systemDisk": "Startup disk (cannot be selected)",
     "notSelectable": "Not selectable",
     "removable": "Removable",
@@ -60,34 +60,34 @@
     "openImage": "Open an image file",
     "imageHint": "If you already made an image (.img), opening that is the safer route.",
     "imageSelected": "Image",
-    "adminNeeded": "Reading a raw device needs administrator rights",
-    "adminExplainMac": "This app is running unprivileged, so reading a device directly will fail. Relaunch as administrator, or make an image with sudo from the CLI and open that image instead.",
+    "adminNeeded": "Reading a raw device requires administrator rights",
+    "adminExplainMac": "This app is running unprivileged, so reading a device directly will fail. Relaunch as administrator, or make an image from the CLI with sudo in a terminal and open that image instead.",
     "adminExplainWin": "This app is running unprivileged. Right-click the app and choose \"Run as administrator\" (the installed build asks at startup).",
     "relaunch": "Relaunch as administrator",
-    "adminOk": "Running with administrator rights"
+    "adminOk": "Running as administrator"
   },
   "mode": {
-    "title": "What do you want to do?",
-    "lead": "If the media is failing, image it first. Every read can make it worse, so work from the image afterwards.",
+    "title": "Task",
+    "lead": "For failing media, start with \"Image the whole device\". Every read can make it worse, so work from the image afterwards.",
     "deleted": {
       "title": "Find deleted files",
       "desc": "Look for files you deleted by accident and pull them out with their folder structure."
     },
     "formatted": {
       "title": "Recover from a formatted device",
-      "desc": "A quick format only clears the index, so folders usually survive. This takes a while."
+      "desc": "Even after a quick format, the leftover folders often still hold the contents. This takes a while."
     },
     "image": {
-      "title": "Image a failing device",
-      "desc": "Grab the readable areas first and leave bad sectors for later. You can stop and resume."
+      "title": "Image the whole device",
+      "desc": "Copies the readable areas first and leaves bad sectors for later. You can stop and pick up where you left off."
     },
     "copy": {
       "title": "Copy everything as it is",
-      "desc": "Mirror what is on the device to another disk, keeping the same structure. Unreadable parts do not stop it."
+      "desc": "Copies what is currently stored to another disk, keeping the same structure. Unreadable parts do not stop it."
     },
     "carve": {
       "title": "Search by file format (last resort)",
-      "desc": "For a destroyed file system. It finds the contents, but the original file names are gone for good."
+      "desc": "For a destroyed file system. It finds the contents, but the original file names cannot be recovered."
     }
   },
   "run": {
@@ -98,7 +98,7 @@
     "restore": "Restoring",
     "repair": "Repairing",
     "cancelling": "Stopping…",
-    "cancelled": "Stopped. Everything written so far is kept.",
+    "cancelled": "Stopped. Everything found so far is kept.",
     "found": "Found",
     "rescued": "Rescued",
     "bad": "Bad",
@@ -126,27 +126,29 @@
       "nonScraped": "Not scraped"
     },
     "stalled": "Waiting for the device ({secs}s)",
-    "stalledHint": "This is normal for failing media. Wait it out, or stop — everything read so far is kept."
+    "stalledHint": "This happens often with unstable media. Wait it out, or stop — everything read so far is kept.",
+    "cancelStuck": "Cannot stop: the device is not responding",
+    "cancelStuckHint": "The read is stuck partway through, so the stop request cannot get through. Physically unplugging the media releases it. Everything read so far is saved, and running again with the same settings picks up where it left off."
   },
   "image": {
     "title": "Imaging settings",
     "output": "Where to write the image",
     "chooseOutput": "Choose destination…",
-    "mapfileHint": "A .map file is written next to it. You can stop and resume from there.",
+    "mapfileHint": "A .map file is written alongside it. If you stop, you can resume from there.",
     "retries": "Retries per bad sector",
     "blockSize": "Read size",
     "unmount": "Unmount before starting (macOS)",
     "sameDiskWarning": "The destination must be on a different disk from the source.",
-    "overwrite": "An image with that name already exists. Overwrite it?",
-    "resume": "Found a resume record. Continuing from there.",
+    "overwrite": "Overwrite an image with the same name",
+    "resume": "Found a resume record. Picking up where it left off.",
     "result": "Imaging result",
     "analyzeImage": "Scan this image",
-    "incomplete": "Some areas could not be read. Running again later retries only those areas."
+    "incomplete": "Some areas could not be read. Running again later with the same settings retries only those areas."
   },
   "scan": {
     "options": "How to search",
     "deleted": "Look for deleted files",
-    "orphans": "Also search leftover folders (needed after a format; takes longer)",
+    "orphans": "Also search leftover folders (required after a format; takes longer)",
     "fs": "File system",
     "fsAuto": "Detect automatically",
     "volume": "Volume",
@@ -154,7 +156,7 @@
     "bootSource": {
       "primary": "The boot sector was read normally",
       "backup": "The primary boot sector was damaged, so the backup was used",
-      "estimated": "No readable boot sector, so the geometry was estimated from the FAT. Results are less reliable"
+      "estimated": "The boot sector is damaged. The geometry was estimated from the FAT, so the results are less reliable."
     }
   },
   "results": {
@@ -162,8 +164,8 @@
     "summary": "{files} files / {dirs} folders",
     "showing": "Showing {shown} of {total}",
     "selected": "{count} selected ({size})",
-    "empty": "Nothing matches.",
-    "emptyHint": "After a format, scan again with \"search leftover folders\" enabled. If the file system itself is gone, search by file format instead (names cannot be recovered).",
+    "empty": "Nothing matches",
+    "emptyHint": "After a format, scan again with \"Also search leftover folders\" enabled. If the file system itself is gone, search by file format instead (file names cannot be recovered)",
     "carveInstead": "Search by file format",
     "restoreSelected": "Restore selected",
     "preview": "Preview",
@@ -192,14 +194,14 @@
       "truncated": "Not enough data"
     },
     "concernHelp": {
-      "contiguous": "The cluster chain is gone, so the file was collected assuming it was stored in one piece. Fragmented files come back broken.",
-      "partialName": "Deletion drops the first character of the short name. Nothing can bring it back.",
-      "conflicting": "That area is in use by another file now, so it has probably been overwritten.",
-      "truncated": "Could not collect as many bytes as the recorded size."
+      "contiguous": "The cluster chain is gone, so this was recovered assuming it was stored in one piece from the starting position. A file that was fragmented may come back damaged.",
+      "partialName": "Deletion drops the first character of the name. Nothing can bring it back.",
+      "conflicting": "That area is in use by another file now, so it has most likely been overwritten.",
+      "truncated": "Could not collect as much data as the recorded size."
     },
     "carved": {
       "title": "Carved files",
-      "noNames": "Original names are gone. Check the contents before sorting them.",
+      "noNames": "Original file names cannot be recovered. Check the contents before sorting them.",
       "exact": "Exact end",
       "truncated": "Estimated end",
       "camera": "Camera",
@@ -207,10 +209,10 @@
     }
   },
   "restore": {
-    "title": "Where should the files go?",
+    "title": "Select where to restore to",
     "dest": "Destination folder",
     "choose": "Choose a folder…",
-    "sameDiskWarning": "The destination must be on a different disk. Writing to the source device overwrites the data you are trying to recover.",
+    "sameDiskWarning": "The destination must be on a different disk from the source. Writing to the same device overwrites the data you are trying to recover.",
     "flatten": "Put everything in one folder instead of rebuilding the structure",
     "run": "Start restoring",
     "result": "Restore result",
@@ -240,12 +242,12 @@
     "title": "Search by file format",
     "output": "Where to put the carved files",
     "align": "Boundary to look at",
-    "alignHint": "If you know the cluster size (e.g. 4096), setting it makes this faster and more accurate.",
+    "alignHint": "If you know the cluster size (4096, for example), setting it makes this faster and more accurate.",
     "formats": "Formats to look for",
     "allFormats": "All formats",
     "result": "Carving result",
     "found": "{count} files ({size})",
-    "noNames": "Original names cannot be recovered. Files with a readable capture date get it in the name."
+    "noNames": "Original file names cannot be recovered. Files with a readable capture date get it in the name."
   },
   "repair": {
     "title": "Repair a broken file",
@@ -253,7 +255,7 @@
     "input": "File to repair",
     "output": "Output file",
     "reference": "Reference file (optional)",
-    "referenceHint": "A healthy file from the same device with the same settings improves the result. JPEG borrows the header, MP4 the moov layout, AVI the hdrl.",
+    "referenceHint": "A healthy file made by the same device with the same settings improves the result. JPEG borrows the header, MP4 the moov layout, and AVI the hdrl from that file.",
     "run": "Repair",
     "result": "Repair result",
     "fixes": "What was fixed",
@@ -265,29 +267,29 @@
       "partial": "Partially repaired",
       "failed": "Could not repair"
     },
-    "mp4Expectation": "Rebuilding an MP4 index without a reference file has a low success rate, commercial tools included. You get the video stream only, and audio is lost.",
-    "videoVerify": "Automatic checks for video stop at container consistency. Confirm playback in a player yourself."
+    "mp4Expectation": "Repairing an MP4 without a reference file has a low success rate, commercial tools included. You get the video stream only, and the audio is lost.",
+    "videoVerify": "Automatic checks for video stop at structural consistency. Confirm playback in a player yourself."
   },
   "errors": {
     "title": "That did not work",
     "permissionDenied": "Not enough privileges",
+    "fullDiskAccess": "Blocked by macOS Full Disk Access",
     "systemDisk": "The startup disk cannot be a recovery source",
     "sameDevice": "The destination is on the same device as the source",
     "busy": "The device is in use",
     "notFound": "Not found",
     "noFilesystem": "No FAT32 or exFAT volume found",
-    "badRequest": "Invalid settings",
+    "badRequest": "The settings are not valid",
     "io": "Writing failed",
     "other": "Error",
-    "noFilesystemHint": "The file system may be destroyed. Searching by file format still finds the contents (but not the names).",
-    "sameDeviceHint": "Choose another disk. Writing to the source device overwrites the data you want back.",
-    "fullDiskAccess": "Blocked by macOS Full Disk Access",
     "fullDiskAccessHint": "Administrator rights do not fix this. To read a raw disk, add this app under System Settings > Privacy & Security > Full Disk Access, then restart the app.",
-    "openSettings": "Open System Settings"
+    "openSettings": "Open System Settings",
+    "noFilesystemHint": "The file system may be destroyed. Searching by file format still finds the contents, but not the file names",
+    "sameDeviceHint": "Choose another disk. Writing to the same device overwrites the data you are trying to recover."
   },
   "safety": {
     "readOnly": "Never writes to the source device",
     "imageFirst": "For failing media, image it first and work from the image. Every read can make it worse.",
-    "liveDevice": "Reading the device directly"
+    "liveDevice": "This will read the device directly"
   }
 }

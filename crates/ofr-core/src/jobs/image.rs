@@ -30,16 +30,15 @@ pub(crate) fn run(ctx: &JobCtx, req: ImageRequest) -> Result<(Outcome, JobResult
         ofr_device::unmount_device(&info.id)?;
     }
 
-    let map_path: PathBuf = req.mapfile.clone().unwrap_or_else(|| {
-        let mut p = req.output.clone().into_os_string();
-        p.push(".map");
-        PathBuf::from(p)
-    });
+    let map_path: PathBuf = req
+        .mapfile
+        .clone()
+        .unwrap_or_else(|| crate::mapfile_path(&req.output));
 
     // 再開できない上書きは、GUI 側で確認を取ってから overwrite を立てて来る。
     if req.output.exists() && !req.overwrite && !map_path.exists() {
         return Err(CoreError::BadRequest(format!(
-            "{} は既に存在する。再開用の mapfile もないので、上書きの確認が要る",
+            "{} は既に存在します。再開用のmapfileがないので、上書きの確認が必要です",
             req.output.display()
         )));
     }
@@ -96,8 +95,7 @@ pub(crate) fn run(ctx: &JobCtx, req: ImageRequest) -> Result<(Outcome, JobResult
     if !summary.is_complete() && !summary.cancelled {
         ctx.note(
             NoteLevel::Warn,
-            "読めない領域が残っている。時間をおいて同じ設定で実行すると、\
-             mapfile の不良領域だけを再試行する。",
+            "読めない領域が残っています。時間をおいて同じ設定で実行すると、mapfileの不良領域だけを再試行します。",
         );
     }
 

@@ -401,3 +401,62 @@ fn make_png() -> Vec<u8> {
         .unwrap();
     buf.into_inner()
 }
+
+/// 吸い出しが最後まで行くと、完了イベントと結果が返ること。
+///
+/// GUI はこの完了イベントで「次に進む」ボタンを出すので、ここが出ないと
+/// 画面が実行中のまま止まる。
+#[test]
+fn imaging_finishes_and_reports_the_result() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = write_image(dir.path(), "src.img", &vec![7u8; 3 << 20]);
+    let output = dir.path().join("out.img");
+
+    let core = Core::new();
+    let (_, events, last) = run(
+        &core,
+        JobRequest::Image(
+            serde_json::from_value(serde_json::json!({
+                "kind": "image",
+                "source": source,
+                "output": output,
+            }))
+            .unwrap(),
+        ),
+    );
+
+    let JobEvent::Finished {
+        outcome, result, ..
+    } = last
+    else {
+        panic!("完了イベントが来ない: {last:?}");
+    };
+    assert_eq!(outcome, Outcome::Complete);
+    let JobResult::Image(summary) = *result else {
+        panic!("結果の型が違う");
+    };
+    assert!(summary.complete);
+    assert_eq!(summary.rescued, 3 << 20);
+    assert_eq!(summary.remaining, 0);
+    assert!(!summary.image_path.is_empty());
+    assert_eq!(std::fs::metadata(&output).unwrap().len(), 3 << 20);
+
+    // 進捗が 1 回も出ずに終わっていないこと (GUI の帯グラフが空になる)。
+    assert!(events.progress_count() > 0);
+
+    // JSON にしたときに GUI が読む形になっていること。
+    let json = serde_json::to_value(
+        events
+            .all
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|e| e.is_terminal())
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(json["event"], "finished");
+    assert_eq!(json["result"]["kind"], "image");
+    assert_eq!(json["result"]["complete"], true);
+}

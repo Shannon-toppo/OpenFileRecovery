@@ -38,7 +38,7 @@ pub enum DeviceError {
     },
 
     /// デバイス末尾を越える読み込み要求。呼び出し側のバグを示す。
-    #[error("offset {offset} + {len} はデバイスサイズ {device_len} を超えている")]
+    #[error("offset {offset} + {len}はデバイスサイズ{device_len}を超えています")]
     OutOfRange {
         /// 要求された開始オフセット。
         offset: u64,
@@ -49,7 +49,7 @@ pub enum DeviceError {
     },
 
     /// 必要なバイト数を読み切る前にデバイス末尾に達した。
-    #[error("offset {offset}: {needed} バイト必要だが {got} バイトしか読めなかった")]
+    #[error("offset {offset}: {needed}バイト必要だが{got}バイトしか読めませんでした")]
     UnexpectedEof {
         /// 読み込みの開始オフセット。
         offset: u64,
@@ -60,7 +60,7 @@ pub enum DeviceError {
     },
 
     /// セクタ境界に整列していない読み込み(Windows の非バッファIO 等)。
-    #[error("offset {offset} / len {len} がブロックサイズ {block_size} に整列していない")]
+    #[error("offset {offset} / len {len}がブロックサイズ{block_size}に整列していません")]
     Unaligned {
         /// 読み込みの開始オフセット。
         offset: u64,
@@ -71,11 +71,11 @@ pub enum DeviceError {
     },
 
     /// 指定されたデバイスが見つからない。
-    #[error("デバイスが見つからない: {0}")]
+    #[error("デバイスが見つかりません: {0}")]
     NotFound(String),
 
     /// 権限不足。生デバイスアクセスには管理者/root権限が必要。
-    #[error("{path} へのアクセス権限がない(管理者権限で実行する必要がある): {source}")]
+    #[error("{path} へのアクセス権限がありません(管理者権限で実行する必要があります): {source}")]
     PermissionDenied {
         /// 開こうとしたパス。
         path: PathBuf,
@@ -105,7 +105,9 @@ pub enum DeviceError {
     },
 
     /// デバイスが他プロセス/OS に掴まれていて開けない。
-    #[error("{path} は使用中で開けない(macOS では `diskutil unmountDisk` でアンマウントする)")]
+    #[error(
+        "{path} は使用中で開けません(macOSでは`diskutil unmountDisk`でアンマウントしてください)"
+    )]
     Busy {
         /// 開こうとしたパス。
         path: PathBuf,
