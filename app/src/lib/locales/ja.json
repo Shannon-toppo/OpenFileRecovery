@@ -2,7 +2,8 @@
   "app": {
     "title": "Open File Recovery",
     "subtitle": "USBメモリ / SDカードのデータ復旧",
-    "language": "言語"
+    "language": "言語",
+    "version": "バージョン"
   },
   "steps": {
     "device": "デバイス",

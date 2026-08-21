@@ -27,6 +27,9 @@
 
   let current = $derived(positionOf(app.step));
 
+  // 不具合を報告してもらうとき、どの版の話かが要る。画面から読めるようにしておく。
+  const version = __APP_VERSION__;
+
   onMount(() => {
     const unlisten = onJobEvent(applyEvent);
     return () => {
@@ -42,7 +45,12 @@
         <img src="/icon.png" alt="" width="28" height="28" />
         <div>
           <h1>{$t("app.title")}</h1>
-          <div class="muted" style="font-size: 12px">{$t("app.subtitle")}</div>
+          <div class="muted" style="font-size: 12px">
+            {$t("app.subtitle")}
+            {#if version}
+              <span class="version" title={$t("app.version")}>v{version}</span>
+            {/if}
+          </div>
         </div>
       </div>
       <div class="row">
@@ -142,6 +150,14 @@
 
   .steps li.done {
     color: var(--text);
+  }
+
+  .version {
+    /* 報告のときに読み上げ・コピーができるよう、選択できるままにしておく。 */
+    margin-left: 6px;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    opacity: 0.8;
   }
 
   .dot {

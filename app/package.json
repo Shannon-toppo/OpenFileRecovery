@@ -1,6 +1,6 @@
 {
   "name": "open-file-recovery",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "USB メモリと SD カードのデータ復旧ツール",
   "license": "MIT",
   "private": true,
