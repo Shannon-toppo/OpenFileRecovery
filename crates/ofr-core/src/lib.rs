@@ -53,7 +53,7 @@ pub use dto::{
     FileResultDto, ImageSummaryDto, MapSegmentDto, ProgressDto, RepairReportDto, ScanStatsDto,
     VolumeDto,
 };
-pub use elevate::PrivilegeDto;
+pub use elevate::{ELEVATED_LOG, FULL_DISK_ACCESS_SETTINGS, PrivilegeDto};
 pub use error::{CoreError, ErrorCode, Result};
 pub use job::{
     CarveRequest, CarveResultDto, CopyRequest, CopyResultDto, EventSink, ExistingFile, FsChoice,

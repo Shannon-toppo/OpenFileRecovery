@@ -17,6 +17,11 @@ pub type Result<T> = std::result::Result<T, CoreError>;
 pub enum ErrorCode {
     /// 生デバイスを開く権限がない。管理者 / root で実行し直す必要がある。
     PermissionDenied,
+    /// root なのに OS 側の保護で開けない(macOS のフルディスクアクセス)。
+    ///
+    /// 権限を上げ直しても直らない。[`PermissionDenied`](Self::PermissionDenied) と
+    /// 対処が正反対なので、GUI が案内を出し分けられるように分けてある。
+    FullDiskAccess,
     /// 起動ディスクを復旧元にしようとした(PLAN.md 6章 3項)。
     SystemDisk,
     /// 出力先が復旧元と同じデバイス上にある(同 2項)。
@@ -112,6 +117,7 @@ impl CoreError {
         match self {
             CoreError::Device(e) => match e {
                 ofr_device::DeviceError::PermissionDenied { .. } => ErrorCode::PermissionDenied,
+                ofr_device::DeviceError::OsProtected { .. } => ErrorCode::FullDiskAccess,
                 ofr_device::DeviceError::Busy { .. } => ErrorCode::Busy,
                 ofr_device::DeviceError::NotFound(_) => ErrorCode::NotFound,
                 _ => ErrorCode::Other,
