@@ -37,6 +37,35 @@ pub enum DeviceError {
         len: usize,
     },
 
+    /// 読み込みが制限時間内に返ってこなかった。
+    ///
+    /// コントローラが固まったメディアで起きる。読み込みを出したスレッドは
+    /// 割り込み不可の待ちに入っていて回収できないので、
+    /// [`crate::TimeoutDevice`] はそのスレッドを見捨てて先へ進む(PLAN.md 11.2)。
+    #[error("offset {offset} から {len} バイトの読み込みが {waited:?} 以内に返らなかった")]
+    Timeout {
+        /// 返らなかった読み込みの開始オフセット。
+        offset: u64,
+        /// 返らなかった読み込みの長さ。
+        len: usize,
+        /// 待った時間。
+        waited: std::time::Duration,
+    },
+
+    /// 応答しない読み込みが続き、これ以上先へ進めない。
+    ///
+    /// 見捨てたスレッドは1本ずつデバイスハンドルを道連れにするので、
+    /// 上限を超えたらいったん止める。ここまで来たメディアは、電源を入れ直す
+    /// (抜き差しする)以外に復帰の手がない。
+    #[error(
+        "デバイスが応答しません(応答しない読み込みが{abandoned}回)。\
+         メディアをいったん抜いて挿し直してから、同じコマンドで再開してください"
+    )]
+    Unresponsive {
+        /// 見捨てた読み込みの回数。
+        abandoned: u32,
+    },
+
     /// デバイス末尾を越える読み込み要求。呼び出し側のバグを示す。
     #[error("offset {offset} + {len}はデバイスサイズ{device_len}を超えています")]
     OutOfRange {
@@ -137,6 +166,7 @@ impl DeviceError {
         match self {
             DeviceError::Media { .. } => true,
             DeviceError::Busy { .. } => true,
+            DeviceError::Timeout { .. } => true,
             DeviceError::Io { source, .. } => !matches!(
                 source.kind(),
                 io::ErrorKind::InvalidInput
@@ -159,7 +189,8 @@ impl DeviceError {
             | DeviceError::Media { offset, .. }
             | DeviceError::OutOfRange { offset, .. }
             | DeviceError::UnexpectedEof { offset, .. }
-            | DeviceError::Unaligned { offset, .. } => Some(*offset),
+            | DeviceError::Unaligned { offset, .. }
+            | DeviceError::Timeout { offset, .. } => Some(*offset),
             _ => None,
         }
     }

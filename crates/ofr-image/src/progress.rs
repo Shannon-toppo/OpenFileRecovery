@@ -87,6 +87,11 @@ pub struct ImageSummary {
     pub remaining: u64,
     /// 読み込みエラーの回数。
     pub errors: u64,
+    /// 応答が返らず見捨てた読み込みの回数(PLAN.md 11.2)。
+    ///
+    /// [`errors`](Self::errors) にも含まれる。不良セクタと、コントローラが
+    /// 固まって返ってこないメディアを取り違えないために分けて数える。
+    pub timeouts: u64,
     /// デバイスハンドルを開き直した回数。
     pub reopens: u32,
     /// 所要時間。
@@ -112,6 +117,7 @@ impl ImageSummary {
     pub(crate) fn from_blocks(
         blocks: &BlockList,
         errors: u64,
+        timeouts: u64,
         reopens: u32,
         elapsed: Duration,
         cancelled: bool,
@@ -122,6 +128,7 @@ impl ImageSummary {
             bad: blocks.bytes_with(crate::blocks::BlockStatus::BadSector),
             remaining: blocks.remaining(),
             errors,
+            timeouts,
             reopens,
             elapsed,
             cancelled,

@@ -91,6 +91,9 @@ fn default_copy_retries() -> u32 {
 fn default_chunk() -> u64 {
     1 << 20
 }
+fn default_io_timeout_secs() -> f64 {
+    ofr_device::DEFAULT_IO_TIMEOUT.as_secs_f64()
+}
 fn default_align() -> u64 {
     512
 }
@@ -118,6 +121,12 @@ pub struct ImageRequest {
     /// コピーパスの読み込み単位。
     #[serde(default = "default_chunk")]
     pub block_size: u64,
+    /// 1 回の読み込みを見限るまでの秒数。0 なら制限なし(PLAN.md 11.2)。
+    ///
+    /// 固まったメディアは読み込みが返ってこなくなる。制限時間を過ぎた読み込みは
+    /// 見捨てて先へ進む。
+    #[serde(default = "default_io_timeout_secs")]
+    pub io_timeout_secs: f64,
     /// トリムパスを行うか。
     #[serde(default = "yes")]
     pub trim: bool,

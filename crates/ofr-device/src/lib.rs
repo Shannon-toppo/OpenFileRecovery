@@ -33,6 +33,7 @@ mod file;
 mod mock;
 mod slice;
 mod sys;
+mod timeout;
 
 pub use device::{Device, DeviceInfo, DeviceKind};
 pub use error::{DeviceError, Result};
@@ -40,6 +41,7 @@ pub use file::{DEFAULT_BLOCK_SIZE, FileDevice};
 #[cfg(feature = "mock")]
 pub use mock::{MockDevice, MockDeviceBuilder, MockStats};
 pub use slice::SliceDevice;
+pub use timeout::{DEFAULT_IO_TIMEOUT, DEFAULT_MAX_ABANDONED, DeviceFactory, TimeoutDevice};
 
 #[cfg(target_os = "macos")]
 pub use sys::macos::MacDevice;
@@ -62,6 +64,28 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>> {
 /// 管理者 / root 権限が必要。
 pub fn open_device(id: &str) -> Result<Box<dyn Device>> {
     sys::platform::open_device(id)
+}
+
+/// 読み込みに制限時間を設けてデバイスを開く(PLAN.md 11.2)。
+///
+/// 固まったメディアで読み込みが返らなくなっても、`timeout` を過ぎたら
+/// [`DeviceError::Timeout`] を返して先へ進む。返らない読み込みを抱えた IO
+/// スレッドは見捨てられ、デバイスは開き直される。見捨てた本数が
+/// `max_abandoned` に達したら [`DeviceError::Unresponsive`] を返す。
+///
+/// `timeout` が 0 なら制限時間なし([`open_device`] と同じ挙動)。
+pub fn open_device_with_timeout(
+    id: &str,
+    timeout: std::time::Duration,
+    max_abandoned: u32,
+) -> Result<Box<dyn Device>> {
+    let id = id.to_string();
+    let factory: DeviceFactory = Box::new(move || sys::platform::open_device(&id));
+    Ok(Box::new(TimeoutDevice::new(
+        factory,
+        timeout,
+        max_abandoned,
+    )?))
 }
 
 /// 与えたパスが載っている物理デバイスの ID。判定できなければ `None`。

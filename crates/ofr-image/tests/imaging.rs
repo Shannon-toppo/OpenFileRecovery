@@ -19,7 +19,9 @@ const DEVICE_SIZE: u64 = 64 * 1024;
 fn options() -> ImageOptions {
     ImageOptions {
         chunk_size: 4096,
-        min_chunk_size: SECTOR,
+        skip_size_min: 4096,
+        skip_size_max: 16384,
+        probe_size_max: 4096,
         sector_size: Some(SECTOR as u32),
         retry_delay: Duration::ZERO,
         max_retry_delay: Duration::ZERO,
@@ -270,4 +272,210 @@ fn refuses_a_mapfile_from_a_different_device() {
         matches!(err, ofr_image::ImageError::MapMismatch { .. }),
         "想定と違うエラー: {err}"
     );
+}
+
+/// 大きな死に領域を、コピーパスが読み飛ばして先へ進むこと(PLAN.md 11.2c)。
+///
+/// 死に領域を舐め切るまでの失敗の総数は変わらない(いつかは全部に触るため)。
+/// 変わるのは順番で、**死に領域の向こう側にある読める領域を先に確保する**。
+/// 壊れかけメディアでは 1 回の失敗に数秒かかるので、この違いがそのまま
+/// 「途中で力尽きたときにどれだけ手元に残るか」になる。
+#[test]
+fn skips_ahead_over_a_large_dead_area() {
+    const SIZE: u64 = 1 << 20;
+    const DEAD_AT: u64 = 128 * 1024;
+    const DEAD_LEN: u64 = 512 * 1024;
+    const PAST_DEAD: u64 = DEAD_AT + DEAD_LEN;
+
+    /// コピーパスだけを走らせて、(死に領域の先に到達するまでの読み込み回数, 取得量)。
+    fn copy_only(skip_size_max: u64) -> (usize, u64) {
+        let dir = tempfile::tempdir().unwrap();
+        let (img, map) = image_paths(dir.path());
+        let device = MockDevice::builder(SIZE)
+            .pattern()
+            .bad_range(DEAD_AT, DEAD_LEN)
+            .record_reads(true)
+            .build();
+
+        let summary = Imager::new(&device)
+            .with_options(ImageOptions {
+                skip_size_max,
+                trim: false,
+                scrape: false,
+                retry: false,
+                ..options()
+            })
+            .run(&img, Some(&map))
+            .unwrap();
+
+        let reached = device
+            .reads()
+            .iter()
+            .position(|(offset, _)| *offset >= PAST_DEAD)
+            .expect("死に領域の先を読んでいない");
+        (reached, summary.rescued)
+    }
+
+    let (skipping, skipping_rescued) = copy_only(64 * 1024);
+    let (plain, plain_rescued) = copy_only(0);
+
+    assert_eq!(
+        skipping_rescued,
+        SIZE - DEAD_LEN,
+        "読める領域を取り逃している"
+    );
+    assert_eq!(
+        skipping_rescued, plain_rescued,
+        "読み飛ばしで取得量が変わってはいけない"
+    );
+    assert!(
+        skipping * 2 < plain,
+        "読み飛ばしが効いていない: {skipping} 回目で到達 vs {plain} 回目"
+    );
+}
+
+/// 死に領域が広いときだけ、スクレイプの探索単位を広げること(PLAN.md 11.2b)。
+#[test]
+fn widens_the_probe_inside_a_large_dead_area() {
+    const DEAD_AT: u64 = 16 * 1024;
+    const DEAD_LEN: u64 = 16 * 1024;
+
+    // スクレイプまでを走らせて、失敗した読み込みの回数と不良バイト数を測る。
+    fn scrape_only(probe_size_max: u64) -> (u64, u64) {
+        let dir = tempfile::tempdir().unwrap();
+        let (img, map) = image_paths(dir.path());
+        let device = MockDevice::builder(DEVICE_SIZE)
+            .pattern()
+            .bad_range(DEAD_AT, DEAD_LEN)
+            .build();
+
+        let summary = Imager::new(&device)
+            .with_options(ImageOptions {
+                probe_size_max,
+                retry: false,
+                ..options()
+            })
+            .run(&img, Some(&map))
+            .unwrap();
+
+        (device.stats().failed_reads, summary.bad)
+    }
+
+    let (wide_reads, wide_bad) = scrape_only(4096);
+    let (fine_reads, fine_bad) = scrape_only(SECTOR);
+
+    assert_eq!(wide_bad, DEAD_LEN, "死に領域を不良として記録できていない");
+    assert_eq!(
+        wide_bad, fine_bad,
+        "探索単位で不良域の広さが変わってはいけない"
+    );
+    assert!(
+        wide_reads * 2 < fine_reads,
+        "探索単位が広がっていない: {wide_reads} 回 vs {fine_reads} 回"
+    );
+}
+
+/// 不良セクタが数個だけなら、探索単位を広げずセクタ単位まで絞ること。
+///
+/// [`widens_the_probe_inside_a_large_dead_area`] の裏返し。普通の壊れ方で
+/// 精度を落とさないことを確かめる。
+#[test]
+fn keeps_small_bad_areas_exact() {
+    let dir = tempfile::tempdir().unwrap();
+    let (img, map) = image_paths(dir.path());
+    let bad_at = 20 * 1024;
+    let device = MockDevice::builder(DEVICE_SIZE)
+        .pattern()
+        .bad_range(bad_at, SECTOR)
+        .build();
+
+    let summary = Imager::new(&device)
+        // 探索単位の上限を広く取っても、狭い不良域は総当たりされる。
+        .with_options(ImageOptions {
+            probe_size_max: 32 * 1024,
+            ..options()
+        })
+        .run(&img, Some(&map))
+        .unwrap();
+
+    assert_eq!(summary.bad, SECTOR, "不良域が 1 セクタまで絞られていない");
+    assert_image_matches(&img, &device, &[(bad_at, SECTOR)]);
+}
+
+/// 読み込みが返らなくなっても、見捨てて先へ進めること(PLAN.md 11.2a)。
+#[test]
+fn keeps_going_when_reads_never_return() {
+    use ofr_device::{DeviceFactory, TimeoutDevice};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (img, map) = image_paths(dir.path());
+    let hang_at = 8192;
+
+    // この範囲を読んだスレッドは戻らない。開き直しても同じ。
+    let factory: DeviceFactory = Box::new(move || {
+        let device = MockDevice::builder(DEVICE_SIZE)
+            .pattern()
+            .hang_range(hang_at, SECTOR)
+            .build();
+        Ok(Box::new(device) as Box<dyn Device>)
+    });
+    let device = TimeoutDevice::new(factory, Duration::from_millis(100), 64).unwrap();
+
+    let summary = Imager::new(&device)
+        .with_options(ImageOptions {
+            retries: 0,
+            ..options()
+        })
+        .run(&img, Some(&map))
+        .unwrap();
+
+    assert!(summary.timeouts > 0, "タイムアウトが記録されていない");
+    assert!(!summary.is_complete());
+    assert_eq!(summary.bad, SECTOR, "固まった範囲だけが不良のはず");
+    assert_eq!(
+        summary.rescued,
+        DEVICE_SIZE - SECTOR,
+        "他の領域が取れていない"
+    );
+
+    // 固まった範囲以外はイメージに入っている。
+    let reference = MockDevice::patterned(DEVICE_SIZE);
+    assert_image_matches(&img, &reference, &[(hang_at, SECTOR)]);
+}
+
+/// 応答しない読み込みが続いたら、mapfile を残して打ち切ること(PLAN.md 11.2a)。
+#[test]
+fn stops_when_the_device_stops_responding_entirely() {
+    use ofr_device::{DeviceFactory, TimeoutDevice};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (img, map) = image_paths(dir.path());
+
+    // 4KiB 以降が全部無応答。見捨てる上限は 2 本。
+    let factory: DeviceFactory = Box::new(move || {
+        let device = MockDevice::builder(DEVICE_SIZE)
+            .pattern()
+            .hang_range(4096, DEVICE_SIZE - 4096)
+            .build();
+        Ok(Box::new(device) as Box<dyn Device>)
+    });
+    let device = TimeoutDevice::new(factory, Duration::from_millis(100), 2).unwrap();
+
+    let err = Imager::new(&device)
+        .with_options(options())
+        .run(&img, Some(&map))
+        .unwrap_err();
+    assert!(
+        matches!(&err, ofr_image::ImageError::Device(e) if matches!(e, ofr_device::DeviceError::Unresponsive { .. })),
+        "想定と違うエラー: {err}"
+    );
+
+    // 打ち切っても、そこまでの成果と mapfile は残る。
+    let saved = MapFile::load(&map).unwrap();
+    assert_eq!(
+        saved.blocks.rescued(),
+        4096,
+        "取得済み領域が記録されていない"
+    );
+    assert_eq!(fs::metadata(&img).unwrap().len(), DEVICE_SIZE);
 }

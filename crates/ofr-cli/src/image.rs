@@ -11,7 +11,10 @@ use ofr_image::{ImageOptions, ImageSummary, Imager};
 
 use crate::Outcome;
 use crate::format;
-use crate::source::{self, install_cancel_handler, parse_size, same_device};
+use crate::source::{self, install_cancel_handler, parse_duration, parse_size, same_device};
+
+/// 応答しない読み込みを見捨てる上限。これを超えたら打ち切って抜き差しを促す。
+const MAX_ABANDONED_READS: u32 = ofr_device::DEFAULT_MAX_ABANDONED;
 
 /// `ofr image` の引数。
 #[derive(Debug, clap::Args)]
@@ -42,6 +45,25 @@ pub struct ImageArgs {
     #[arg(long)]
     pub sector_size: Option<String>,
 
+    /// 1 回の読み込みを見限るまでの時間(`30s`, `500ms`)。`0` で制限なし。
+    ///
+    /// 固まったメディアは読み込みが返ってこなくなる。制限時間を過ぎたら
+    /// その読み込みを見捨てて先へ進む(PLAN.md 11.2)。
+    #[arg(long, default_value = "30s")]
+    pub io_timeout: String,
+
+    /// 読み込みに失敗したときに読み飛ばす量の上限。
+    #[arg(long, default_value = "16M")]
+    pub skip_size: String,
+
+    /// 失敗しても読み飛ばさない(従来どおり順に読む)。
+    #[arg(long, conflicts_with = "skip_size")]
+    pub no_skip: bool,
+
+    /// スクレイプ/リトライの探索単位の上限。セクタサイズにすると総当たりになる。
+    #[arg(long, default_value = "64K")]
+    pub probe_size: String,
+
     /// トリムパスを行わない。
     #[arg(long)]
     pub no_trim: bool,
@@ -69,7 +91,8 @@ pub fn run(args: ImageArgs) -> Result<Outcome, Box<dyn std::error::Error>> {
     // (開くには管理者権限が要るので、権限エラーで理由が隠れないように)。
     source::check_source_selectable(&args.source)?;
 
-    let device = source::open_source(&args.source)?;
+    let io_timeout = parse_duration(&args.io_timeout)?;
+    let device = source::open_source_with_timeout(&args.source, io_timeout, MAX_ABANDONED_READS)?;
     let info = device.info().clone();
     check_safety(&info, &args)?;
 
@@ -110,6 +133,9 @@ pub fn run(args: ImageArgs) -> Result<Outcome, Box<dyn std::error::Error>> {
     println!("出力:   {}", args.output.display());
     if let Some(p) = &map_path {
         println!("mapfile: {}", p.display());
+    }
+    if !io_timeout.is_zero() && !std::path::Path::new(&args.source).is_file() {
+        println!("読み込みの制限時間: {}", format::duration(io_timeout));
     }
     println!();
 
@@ -171,6 +197,12 @@ fn build_options(args: &ImageArgs, tty: bool) -> Result<ImageOptions, Box<dyn st
     };
     Ok(ImageOptions {
         chunk_size: parse_size(&args.block_size)?,
+        skip_size_max: if args.no_skip {
+            0
+        } else {
+            parse_size(&args.skip_size)?
+        },
+        probe_size_max: parse_size(&args.probe_size)?,
         sector_size,
         retries: args.retries,
         trim: !args.no_trim,
@@ -233,6 +265,12 @@ fn print_summary(summary: &ImageSummary, map_path: Option<&Path>) {
     println!("不良:   {}", format::bytes(summary.bad));
     println!("未取得: {}", format::bytes(summary.remaining));
     println!("エラー: {} 回", summary.errors);
+    if summary.timeouts > 0 {
+        println!(
+            "応答なし: {} 回(制限時間で見捨てた読み込み)",
+            summary.timeouts
+        );
+    }
     if summary.reopens > 0 {
         println!("開き直し: {} 回", summary.reopens);
     }
@@ -245,6 +283,10 @@ fn print_summary(summary: &ImageSummary, map_path: Option<&Path>) {
         println!();
         println!("読めない領域が残っている。時間をおいて同じコマンドを実行すると、");
         println!("mapfile の不良領域だけを再試行する(--retries で回数を増やせる)。");
+        if summary.timeouts > 0 {
+            println!("応答が返らなくなった読み込みがある。メディアを抜き差ししてから");
+            println!("再開すると、コントローラが復帰して読めることがある。");
+        }
         if let Some(p) = map_path {
             println!("不良領域の一覧: {}", p.display());
         }

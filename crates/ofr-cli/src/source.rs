@@ -13,7 +13,7 @@ use ofr_device::Device;
 use ofr_fs::{FileSystem, FsKind};
 
 pub use ofr_core::source::{
-    Volume, check_destination, check_source_selectable, parse_size, same_device,
+    Volume, check_destination, check_source_selectable, parse_duration, parse_size, same_device,
 };
 
 /// `--fs` の選択肢。
@@ -40,6 +40,19 @@ impl FsChoice {
 /// 復旧元を開く。既存のファイルならイメージとして、それ以外はデバイス ID として扱う。
 pub fn open_source(source: &str) -> Result<Arc<dyn Device>, Box<dyn Error>> {
     Ok(ofr_core::source::open_source(source)?)
+}
+
+/// 読み込みに制限時間を設けて復旧元を開く(PLAN.md 11.2)。
+pub fn open_source_with_timeout(
+    source: &str,
+    timeout: std::time::Duration,
+    max_abandoned: u32,
+) -> Result<Arc<dyn Device>, Box<dyn Error>> {
+    Ok(ofr_core::source::open_source_with_timeout(
+        source,
+        timeout,
+        max_abandoned,
+    )?)
 }
 
 /// ファイルシステムのある位置を探す。

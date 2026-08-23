@@ -17,7 +17,13 @@ pub(crate) fn run(ctx: &JobCtx, req: ImageRequest) -> Result<(Outcome, JobResult
     // 6章 3項: 起動ディスクは復旧元にできない。開く前に弾く。
     source::check_source_selectable(&req.source)?;
 
-    let device = source::open_source(&req.source)?;
+    // 固まったメディアで読み込みが返らなくなっても止まらないよう、制限時間を設ける。
+    let io_timeout = Duration::from_secs_f64(req.io_timeout_secs.max(0.0));
+    let device = source::open_source_with_timeout(
+        &req.source,
+        io_timeout,
+        ofr_device::DEFAULT_MAX_ABANDONED,
+    )?;
     let info = device.info().clone();
     if info.is_system_disk {
         return Err(CoreError::SystemDisk(info.id.clone()));
@@ -98,6 +104,15 @@ pub(crate) fn run(ctx: &JobCtx, req: ImageRequest) -> Result<(Outcome, JobResult
             "読めない領域が残っています。時間をおいて同じ設定で実行すると、mapfileの不良領域だけを再試行します。",
         );
     }
+    if summary.timeouts > 0 {
+        ctx.note(
+            NoteLevel::Warn,
+            format!(
+                "{}回、読み込みが返ってこなかったので見捨てました。メディアをいったん抜いて挿し直してから再開すると、読めることがあります。",
+                summary.timeouts
+            ),
+        );
+    }
 
     let dto = ImageSummaryDto {
         total: summary.total,
@@ -105,6 +120,7 @@ pub(crate) fn run(ctx: &JobCtx, req: ImageRequest) -> Result<(Outcome, JobResult
         bad: summary.bad,
         remaining: summary.remaining,
         errors: summary.errors,
+        timeouts: summary.timeouts,
         reopens: summary.reopens,
         elapsed_secs: summary.elapsed.as_secs_f64(),
         cancelled: summary.cancelled,

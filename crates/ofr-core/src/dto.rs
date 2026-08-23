@@ -264,6 +264,8 @@ pub struct ImageSummaryDto {
     pub remaining: u64,
     /// 読み込みエラーの回数。
     pub errors: u64,
+    /// 応答が返らず見捨てた読み込みの回数(`errors` にも含まれる)。
+    pub timeouts: u64,
     /// デバイスを開き直した回数。
     pub reopens: u32,
     /// 所要秒数。

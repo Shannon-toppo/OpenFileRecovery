@@ -137,6 +137,8 @@ export interface ImageSummaryDto {
   bad: number;
   remaining: number;
   errors: number;
+  /** 応答が返らず見捨てた読み込みの回数 (errors にも含まれる)。 */
+  timeouts: number;
   reopens: number;
   elapsedSecs: number;
   cancelled: boolean;
@@ -285,6 +287,8 @@ export type JobRequest =
       mapfile?: string;
       retries?: number;
       blockSize?: number;
+      /** 1 回の読み込みを見限るまでの秒数。0 で制限なし。既定は 30。 */
+      ioTimeoutSecs?: number;
       trim?: boolean;
       scrape?: boolean;
       retry?: boolean;
