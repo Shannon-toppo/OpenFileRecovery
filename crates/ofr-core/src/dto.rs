@@ -268,6 +268,8 @@ pub struct ImageSummaryDto {
     pub timeouts: u64,
     /// デバイスを開き直した回数。
     pub reopens: u32,
+    /// デバイスが応答しなくなって抜き差しを待った回数。
+    pub stalls: u32,
     /// 所要秒数。
     pub elapsed_secs: f64,
     /// 中断されたか。

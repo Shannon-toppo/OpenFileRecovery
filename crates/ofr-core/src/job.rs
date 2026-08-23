@@ -94,6 +94,9 @@ fn default_chunk() -> u64 {
 fn default_io_timeout_secs() -> f64 {
     ofr_device::DEFAULT_IO_TIMEOUT.as_secs_f64()
 }
+fn default_wait_secs() -> f64 {
+    300.0
+}
 fn default_align() -> u64 {
     512
 }
@@ -136,6 +139,20 @@ pub struct ImageRequest {
     /// リトライパスを行うか。
     #[serde(default = "yes")]
     pub retry: bool,
+    /// 既に読めなかった領域だけを対象にするか(PLAN.md 11.3)。
+    ///
+    /// 未試行の領域には触らない。時間をおいての再挑戦に使う。既存の mapfile が要る。
+    #[serde(default)]
+    pub retry_only: bool,
+    /// 開始前に、不良として記録されている領域を未試行に戻すか(PLAN.md 11.3)。
+    #[serde(default)]
+    pub reset_bad: bool,
+    /// デバイスが応答しなくなったとき、抜き差しを待つか(PLAN.md 11.3)。
+    #[serde(default = "yes")]
+    pub wait_on_stall: bool,
+    /// 抜き差しを待つ時間の上限(秒)。
+    #[serde(default = "default_wait_secs")]
+    pub wait_timeout_secs: f64,
     /// 開始前にアンマウントするか(macOS)。
     #[serde(default)]
     pub unmount: bool,

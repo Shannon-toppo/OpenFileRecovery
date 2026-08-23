@@ -4,12 +4,13 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use ofr_device::Device;
-use ofr_image::{ImageOptions, Imager};
+use ofr_image::{ImageOptions, Imager, StallAction};
 
 use super::JobCtx;
 use crate::dto::{ImageSummaryDto, MapSegmentDto, ProgressDto, eta_secs};
 use crate::error::{CoreError, Result};
 use crate::job::{ImageRequest, JobResult, NoteLevel, Outcome};
+use crate::replug::{self, ReplugState};
 use crate::source;
 
 /// 吸い出しを実行する。
@@ -61,12 +62,14 @@ pub(crate) fn run(ctx: &JobCtx, req: ImageRequest) -> Result<(Outcome, JobResult
         trim: req.trim,
         scrape: req.scrape,
         retry: req.retry,
+        retry_only: req.retry_only,
+        reset_bad: req.reset_bad,
         progress_interval: Duration::from_millis(100),
         ..ImageOptions::default()
     };
 
     let reporter = ctx.clone();
-    let summary = Imager::new(&*device)
+    let mut imager = Imager::new(&*device)
         .with_options(options)
         .with_cancel(ctx.cancel.clone())
         .with_progress(move |p| {
@@ -95,8 +98,48 @@ pub(crate) fn run(ctx: &JobCtx, req: ImageRequest) -> Result<(Outcome, JobResult
                 map: p.map.iter().map(MapSegmentDto::from).collect(),
                 ..ProgressDto::default()
             });
-        })
-        .run(&req.output, Some(&map_path))?;
+        });
+
+    // 固まったコントローラは電源を入れ直す以外に戻らない。抜き差しを待つ
+    // (PLAN.md 11.3)。GUI は待っている間の状態を注記で受け取る。
+    if req.wait_on_stall {
+        let waiter = ctx.clone();
+        let identity = info.clone();
+        let wait_timeout = Duration::from_secs_f64(req.wait_timeout_secs.max(0.0));
+        imager = imager.with_stall_handler(move |stall| {
+            waiter.note(
+                NoteLevel::Warn,
+                format!(
+                    "デバイスが応答しません({}回目)。メディアをいったん抜いて、数秒おいてから挿し直してください。",
+                    stall.attempt
+                ),
+            );
+            let back = replug::wait_for_replug(
+                &identity,
+                wait_timeout,
+                &waiter.cancel,
+                |state| match state {
+                    ReplugState::WaitingInsertion => {
+                        waiter.note(NoteLevel::Info, "デバイスが外れました。挿し直してください。");
+                    }
+                    ReplugState::Back(id) => {
+                        waiter.note(NoteLevel::Info, format!("{id} が戻りました。続きから読み直します。"));
+                    }
+                    ReplugState::TimedOut => {
+                        waiter.note(NoteLevel::Warn, "待ちましたがデバイスが戻ってこないので打ち切ります。");
+                    }
+                    _ => {}
+                },
+            );
+            if back.is_some() {
+                StallAction::Resume
+            } else {
+                StallAction::Abort
+            }
+        });
+    }
+
+    let summary = imager.run(&req.output, Some(&map_path))?;
 
     if !summary.is_complete() && !summary.cancelled {
         ctx.note(
@@ -122,6 +165,7 @@ pub(crate) fn run(ctx: &JobCtx, req: ImageRequest) -> Result<(Outcome, JobResult
         errors: summary.errors,
         timeouts: summary.timeouts,
         reopens: summary.reopens,
+        stalls: summary.stalls,
         elapsed_secs: summary.elapsed.as_secs_f64(),
         cancelled: summary.cancelled,
         complete: summary.is_complete(),

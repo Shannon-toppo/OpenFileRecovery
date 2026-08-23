@@ -18,6 +18,11 @@ pub fn open_device(_id: &str) -> Result<Box<dyn Device>> {
     Err(unsupported())
 }
 
+/// このプラットフォームでは判定できない。常に偽。
+pub fn device_present(_id: &str) -> bool {
+    false
+}
+
 /// このプラットフォームでは判定できない。
 pub fn disk_id_for_path(_path: &Path) -> Option<String> {
     None

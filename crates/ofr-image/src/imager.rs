@@ -28,7 +28,7 @@ use tracing::{debug, info, warn};
 use crate::blocks::{Block, BlockStatus};
 use crate::error::{ImageError, Result};
 use crate::mapfile::{CurrentStatus, MapFile};
-use crate::progress::{ImageSummary, Pass, Progress, ProgressFn};
+use crate::progress::{ImageSummary, Pass, Progress, ProgressFn, Stall, StallAction, StallFn};
 use crate::writer::ImageWriter;
 
 /// ハンドルの開き直しを試みるまでの連続エラー回数。
@@ -70,6 +70,17 @@ pub struct ImageOptions {
     pub scrape: bool,
     /// リトライパスを実行するか。
     pub retry: bool,
+    /// 既に読めなかった領域だけを対象にする(PLAN.md 11.3)。
+    ///
+    /// コピーパスを飛ばすので、未試行の領域には触らない。時間をおいて、
+    /// 冷ましてから、別のリーダーで、といった条件を変えた再挑戦に使う。
+    /// 既存の mapfile が要る。
+    pub retry_only: bool,
+    /// 開始前に、不良として記録されている領域を未試行に戻す(PLAN.md 11.3)。
+    ///
+    /// 抜き差しで電源が入り直った後など、前回の判定をやり直したいときに使う。
+    /// 取得済みの領域は読み直さない。
+    pub reset_bad: bool,
     /// 進捗イベントの最短間隔。既定 100ms(PLAN.md 5.7)。
     pub progress_interval: Duration,
     /// mapfile の自動保存間隔。
@@ -91,6 +102,8 @@ impl Default for ImageOptions {
             trim: true,
             scrape: true,
             retry: true,
+            retry_only: false,
+            reset_bad: false,
             progress_interval: Duration::from_millis(100),
             map_save_interval: Duration::from_secs(10),
         }
@@ -103,6 +116,7 @@ pub struct Imager<'a> {
     options: ImageOptions,
     cancel: Arc<AtomicBool>,
     progress: Option<ProgressFn>,
+    stall: Option<StallFn>,
 }
 
 impl<'a> Imager<'a> {
@@ -113,6 +127,7 @@ impl<'a> Imager<'a> {
             options: ImageOptions::default(),
             cancel: Arc::new(AtomicBool::new(false)),
             progress: None,
+            stall: None,
         }
     }
 
@@ -132,6 +147,22 @@ impl<'a> Imager<'a> {
     /// [`ImageOptions::progress_interval`] に間引かれる。
     pub fn with_progress(mut self, f: impl FnMut(&Progress) + Send + 'static) -> Self {
         self.progress = Some(Box::new(f));
+        self
+    }
+
+    /// デバイスが応答しなくなったときに呼ばれるコールバックを登録する(PLAN.md 11.3)。
+    ///
+    /// 登録しない場合、応答しない読み込みが続くとその場で打ち切る
+    /// ([`ofr_device::DeviceError::Unresponsive`])。登録した場合は
+    /// コールバックの判断に従い、[`StallAction::Resume`] なら
+    /// デバイスの復帰を伝えて同じ範囲から読み直す。
+    ///
+    /// 抜き差しを待つ処理はコールバックの中で行う(ここでブロックしてよい)。
+    pub fn with_stall_handler(
+        mut self,
+        f: impl FnMut(&Stall) -> StallAction + Send + 'static,
+    ) -> Self {
+        self.stall = Some(Box::new(f));
         self
     }
 
@@ -177,8 +208,31 @@ impl<'a> Imager<'a> {
                 );
                 map
             }
-            None => MapFile::new(device_len),
+            None => {
+                if self.options.retry_only {
+                    return Err(ImageError::InvalidOptions(
+                        "再試行だけを行うには、前回の記録 (mapfile) が要る".to_string(),
+                    ));
+                }
+                MapFile::new(device_len)
+            }
         };
+        let mut map = map;
+        if self.options.reset_bad {
+            // 前回の「読めなかった」判定を捨てる。取得済みの領域はそのまま。
+            let stale: Vec<_> = map
+                .blocks
+                .blocks()
+                .iter()
+                .filter(|b| !b.status.is_rescued())
+                .copied()
+                .collect();
+            let bytes: u64 = stale.iter().map(|b| b.size).sum();
+            for b in stale {
+                map.blocks.mark(b.pos, b.size, BlockStatus::NonTried);
+            }
+            info!(bytes, "不良の記録を消して読み直す");
+        }
         let writer = ImageWriter::create(image_path, device_len, existing.is_some())?;
 
         let now = Instant::now();
@@ -187,6 +241,7 @@ impl<'a> Imager<'a> {
             opts: &self.options,
             cancel: &self.cancel,
             progress: self.progress.as_mut(),
+            stall: self.stall.as_mut(),
             writer,
             map,
             map_path: map_path.map(Path::to_path_buf),
@@ -199,6 +254,7 @@ impl<'a> Imager<'a> {
             errors: 0,
             timeouts: 0,
             reopens: 0,
+            stalls: 0,
             pass: Pass::Copy,
             pass_number: 1,
             position: 0,
@@ -214,6 +270,7 @@ struct Run<'r> {
     opts: &'r ImageOptions,
     cancel: &'r AtomicBool,
     progress: Option<&'r mut ProgressFn>,
+    stall: Option<&'r mut StallFn>,
     writer: ImageWriter,
     map: MapFile,
     map_path: Option<PathBuf>,
@@ -226,6 +283,7 @@ struct Run<'r> {
     errors: u64,
     timeouts: u64,
     reopens: u32,
+    stalls: u32,
     pass: Pass,
     pass_number: u32,
     position: u64,
@@ -243,7 +301,9 @@ impl Run<'_> {
     }
 
     fn run_passes(&mut self) -> Result<()> {
-        self.copy_pass()?;
+        if !self.opts.retry_only {
+            self.copy_pass()?;
+        }
         if self.opts.trim && !self.cancelled {
             self.trim_pass()?;
         }
@@ -479,45 +539,106 @@ impl Run<'_> {
     ///
     /// 読めたバイト数を返す。読めなければ `None`(不良のマークは呼び出し側の役目。
     /// パスによって付ける状態が違うため)。
+    ///
+    /// デバイスが応答しなくなった場合だけ、足踏みハンドラの判断を仰いで
+    /// 同じ範囲を読み直すことがある(PLAN.md 11.3)。
     fn rescue(&mut self, pos: u64, len: u64) -> Result<Option<u64>> {
         let len = len as usize;
-        // device と buf を同時に借りられないので、一時的に取り出す。
-        let mut buf = std::mem::take(&mut self.buf);
-        if buf.len() < len {
-            buf.resize(len, 0);
-        }
-        let result = self.device.read_at(pos, &mut buf[..len]);
+        loop {
+            // device と buf を同時に借りられないので、一時的に取り出す。
+            let mut buf = std::mem::take(&mut self.buf);
+            if buf.len() < len {
+                buf.resize(len, 0);
+            }
+            let result = self.device.read_at(pos, &mut buf[..len]);
 
-        let out = match result {
-            Ok(0) => {
-                self.errors += 1;
-                None
-            }
-            Ok(n) => {
-                self.writer.write_at(pos, &buf[..n])?;
-                self.map.blocks.mark(pos, n as u64, BlockStatus::Finished);
-                self.rescued_this_run += n as u64;
-                Some(n as u64)
-            }
-            Err(e) if is_fatal(&e) => {
-                self.buf = buf;
-                return Err(e.into());
-            }
-            Err(e) => {
-                if matches!(e, DeviceError::Timeout { .. }) {
-                    // 応答が返らずに見捨てた読み込み。エラーとは別に数えて、
-                    // 「不良セクタ」と「固まったメディア」を取り違えないようにする。
-                    self.timeouts += 1;
-                    warn!(pos, len, error = %e, "読み込みが返らなかった");
-                } else {
-                    debug!(pos, len, error = %e, "読み込み失敗");
+            let out = match result {
+                Ok(0) => {
+                    self.errors += 1;
+                    None
                 }
-                self.errors += 1;
-                None
-            }
+                Ok(n) => {
+                    self.writer.write_at(pos, &buf[..n])?;
+                    self.map.blocks.mark(pos, n as u64, BlockStatus::Finished);
+                    self.rescued_this_run += n as u64;
+                    Some(n as u64)
+                }
+                Err(DeviceError::Unresponsive { abandoned }) => {
+                    self.buf = buf;
+                    self.errors += 1;
+                    self.timeouts += 1;
+                    // 抜き差ししてもらえるなら、同じ範囲をもう一度読む。
+                    if self.handle_stall(pos, abandoned)? {
+                        continue;
+                    }
+                    if self.cancelled {
+                        // 待っている間に中断された。エラーではなく中断として畳む。
+                        return Ok(None);
+                    }
+                    return Err(DeviceError::Unresponsive { abandoned }.into());
+                }
+                Err(e) if is_fatal(&e) => {
+                    self.buf = buf;
+                    return Err(e.into());
+                }
+                Err(e) => {
+                    if matches!(e, DeviceError::Timeout { .. }) {
+                        // 応答が返らずに見捨てた読み込み。エラーとは別に数えて、
+                        // 「不良セクタ」と「固まったメディア」を取り違えないようにする。
+                        self.timeouts += 1;
+                        warn!(pos, len, error = %e, "読み込みが返らなかった");
+                    } else {
+                        debug!(pos, len, error = %e, "読み込み失敗");
+                    }
+                    self.errors += 1;
+                    None
+                }
+            };
+            self.buf = buf;
+            return Ok(out);
+        }
+    }
+
+    /// デバイスが応答しなくなったときの後始末(PLAN.md 11.3)。
+    ///
+    /// 読み直してよければ `true`。ハンドラが登録されていない、打ち切りを選ばれた、
+    /// キャンセルされた、開き直しに失敗した場合は `false`。
+    fn handle_stall(&mut self, pos: u64, abandoned: u32) -> Result<bool> {
+        self.stalls += 1;
+        let stall = Stall {
+            attempt: self.stalls,
+            position: pos,
+            timeouts: self.timeouts,
         };
-        self.buf = buf;
-        Ok(out)
+        warn!(
+            pos,
+            abandoned,
+            attempt = stall.attempt,
+            "デバイスが応答しない"
+        );
+
+        let Some(handler) = self.stall.as_deref_mut() else {
+            return Ok(false);
+        };
+        // 呼ばれた側は、抜き差しされるまでここでブロックしてよい。
+        let action = handler(&stall);
+        // 待っている間に中断されたかもしれないので、判断より先に見る。
+        if self.check_cancel() || action == StallAction::Abort {
+            return Ok(false);
+        }
+        // 電源が入り直った前提で、打ち切り判断からやり直す。
+        match self.device.recovered() {
+            Ok(true) => {
+                self.reopens += 1;
+                info!(pos, "デバイスが戻ったので読み直す");
+                Ok(true)
+            }
+            Ok(false) => Ok(false),
+            Err(e) => {
+                warn!(error = %e, "デバイスを開き直せなかった");
+                Ok(false)
+            }
+        }
     }
 
     /// USB コントローラが固まったケースに備えてハンドルを開き直す(PLAN.md 5.2)。
@@ -634,6 +755,7 @@ impl Run<'_> {
             self.errors,
             self.timeouts,
             self.reopens,
+            self.stalls,
             self.started.elapsed(),
             self.cancelled,
         )

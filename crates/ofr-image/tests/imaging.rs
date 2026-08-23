@@ -479,3 +479,191 @@ fn stops_when_the_device_stops_responding_entirely() {
     );
     assert_eq!(fs::metadata(&img).unwrap().len(), DEVICE_SIZE);
 }
+
+/// 抜き差しで戻ってきたら、同じ所から読み直して続けられること(PLAN.md 11.3)。
+#[test]
+fn resumes_after_the_device_comes_back() {
+    use ofr_device::{DeviceFactory, TimeoutDevice};
+    use ofr_image::{Stall, StallAction};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (img, map) = image_paths(dir.path());
+    let hang_at = 8192;
+
+    // 「抜き差しされたか」を表すフラグ。真の間は読み込みが返らない。
+    let wedged = Arc::new(AtomicBool::new(true));
+
+    let stuck = Arc::clone(&wedged);
+    let factory: DeviceFactory = Box::new(move || {
+        let builder = MockDevice::builder(DEVICE_SIZE).pattern();
+        let device = if stuck.load(Ordering::Relaxed) {
+            builder.hang_range(hang_at, SECTOR).build()
+        } else {
+            builder.build()
+        };
+        Ok(Box::new(device) as Box<dyn Device>)
+    });
+    // 2 回見捨てたら「応答しない」と判断させる。
+    let device = TimeoutDevice::new(factory, Duration::from_millis(100), 2).unwrap();
+
+    let replugged = Arc::clone(&wedged);
+    let stalls = Arc::new(AtomicU64::new(0));
+    let counter = Arc::clone(&stalls);
+
+    let summary = Imager::new(&device)
+        .with_options(options())
+        // 抜き差しの代わり。ここでフラグを倒すと、開き直した先は健全なデバイスになる。
+        .with_stall_handler(move |stall: &Stall| {
+            counter.fetch_add(1, Ordering::Relaxed);
+            assert!(stall.attempt >= 1);
+            replugged.store(false, Ordering::Relaxed);
+            StallAction::Resume
+        })
+        .run(&img, Some(&map))
+        .unwrap();
+
+    assert!(
+        stalls.load(Ordering::Relaxed) > 0,
+        "足踏みが通知されていない"
+    );
+    assert_eq!(summary.stalls, stalls.load(Ordering::Relaxed) as u32);
+    assert!(summary.timeouts > 0, "見捨てた読み込みが記録されていない");
+    assert!(
+        summary.is_complete(),
+        "戻ってきたのに全域を取得できていない (取得 {} / {})",
+        summary.rescued,
+        summary.total
+    );
+
+    let reference = MockDevice::patterned(DEVICE_SIZE);
+    assert_image_matches(&img, &reference, &[]);
+}
+
+/// 抜き差しを待たない(待っても戻らなかった)場合は、その場で打ち切ること。
+#[test]
+fn aborts_when_the_stall_handler_gives_up() {
+    use ofr_device::{DeviceFactory, TimeoutDevice};
+    use ofr_image::{Stall, StallAction};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (img, map) = image_paths(dir.path());
+
+    let factory: DeviceFactory = Box::new(move || {
+        let device = MockDevice::builder(DEVICE_SIZE)
+            .pattern()
+            .hang_range(4096, DEVICE_SIZE - 4096)
+            .build();
+        Ok(Box::new(device) as Box<dyn Device>)
+    });
+    let device = TimeoutDevice::new(factory, Duration::from_millis(100), 2).unwrap();
+
+    let err = Imager::new(&device)
+        .with_options(options())
+        .with_stall_handler(|_: &Stall| StallAction::Abort)
+        .run(&img, Some(&map))
+        .unwrap_err();
+
+    assert!(
+        matches!(&err, ofr_image::ImageError::Device(e) if matches!(e, ofr_device::DeviceError::Unresponsive { .. })),
+        "想定と違うエラー: {err}"
+    );
+    // 打ち切っても、そこまでの成果と mapfile は残る。
+    assert_eq!(MapFile::load(&map).unwrap().blocks.rescued(), 4096);
+}
+
+/// `retry_only`: 読めなかった領域だけを狙い、未試行の領域には触らないこと(PLAN.md 11.3)。
+#[test]
+fn retries_only_the_bad_areas_on_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let (img, map) = image_paths(dir.path());
+    let bad_at = 20 * 1024;
+
+    // 1 回目。1 セクタが読めないまま終わる。
+    let broken = MockDevice::builder(DEVICE_SIZE)
+        .pattern()
+        .bad_range(bad_at, SECTOR)
+        .build();
+    let first = Imager::new(&broken)
+        .with_options(options())
+        .run(&img, Some(&map))
+        .unwrap();
+    assert_eq!(first.bad, SECTOR);
+
+    // 2 回目。抜き差しして読めるようになった想定で、不良域だけを狙う。
+    let healed = MockDevice::patterned(DEVICE_SIZE);
+    let second = Imager::new(&healed)
+        .with_options(ImageOptions {
+            retry_only: true,
+            ..options()
+        })
+        .run(&img, Some(&map))
+        .unwrap();
+
+    assert!(second.is_complete(), "不良域を回収できていない");
+    assert_eq!(
+        healed.stats().bytes_read,
+        SECTOR,
+        "取得済みの領域まで読み直している"
+    );
+    assert_image_matches(&img, &healed, &[]);
+}
+
+/// `retry_only` は前回の記録がないと使えないこと。
+#[test]
+fn retry_only_needs_a_mapfile() {
+    let dir = tempfile::tempdir().unwrap();
+    let (img, map) = image_paths(dir.path());
+    let device = MockDevice::patterned(DEVICE_SIZE);
+
+    let err = Imager::new(&device)
+        .with_options(ImageOptions {
+            retry_only: true,
+            ..options()
+        })
+        .run(&img, Some(&map))
+        .unwrap_err();
+
+    assert!(
+        matches!(err, ofr_image::ImageError::InvalidOptions(_)),
+        "想定と違うエラー: {err}"
+    );
+}
+
+/// `reset_bad`: 不良の記録を捨ててやり直すこと(PLAN.md 11.3)。
+#[test]
+fn resets_bad_marks_on_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let (img, map) = image_paths(dir.path());
+    let bad_at = 20 * 1024;
+
+    let broken = MockDevice::builder(DEVICE_SIZE)
+        .pattern()
+        .bad_range(bad_at, SECTOR)
+        .build();
+    Imager::new(&broken)
+        .with_options(options())
+        .run(&img, Some(&map))
+        .unwrap();
+    assert_eq!(
+        MapFile::load(&map).unwrap().blocks.status_at(bad_at),
+        Some(BlockStatus::BadSector)
+    );
+
+    let healed = MockDevice::patterned(DEVICE_SIZE);
+    let summary = Imager::new(&healed)
+        .with_options(ImageOptions {
+            reset_bad: true,
+            ..options()
+        })
+        .run(&img, Some(&map))
+        .unwrap();
+
+    assert!(summary.is_complete());
+    assert_eq!(
+        healed.stats().bytes_read,
+        SECTOR,
+        "取得済みの領域まで読み直している"
+    );
+    let saved = MapFile::load(&map).unwrap();
+    assert_eq!(saved.blocks.bytes_with(BlockStatus::BadSector), 0);
+}

@@ -14,6 +14,8 @@ use ofr_testfs::{Scenario, scenarios};
 const EXIT_OK: i32 = 0;
 /// 終了コード: 一部だけ、または何も見つからなかった。
 const EXIT_INCOMPLETE: i32 = 1;
+/// 終了コード: エラー。
+const EXIT_ERROR: i32 = 2;
 
 fn ofr(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_ofr"))
@@ -486,4 +488,52 @@ fn repair_refuses_to_write_over_the_original() {
     assert_eq!(out.status.code(), Some(2));
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("修復元と同じ"), "{err}");
+}
+
+/// `ofr image` の再挑戦用オプションが、CLI から通ること(PLAN.md 11.3)。
+///
+/// 実デバイスの不良は CI で作れないので、ここで見るのは引数の受け渡しと
+/// 「前回の記録がないと `--retry-only` は使えない」という取り決めまで。
+/// 不良域の扱いそのものは `ofr-image` 側のテストで確かめている。
+#[test]
+fn image_retry_only_needs_a_previous_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = write_image(dir.path(), "src.img", &scenarios::fat32_deleted());
+    let output = dir.path().join("out.img");
+
+    // 記録がない状態での --retry-only は断られる。
+    let failed = ofr(&[
+        "image",
+        source.to_str().unwrap(),
+        output.to_str().unwrap(),
+        "--retry-only",
+    ]);
+    assert_eq!(failed.status.code(), Some(EXIT_ERROR));
+    let message = String::from_utf8_lossy(&failed.stderr).into_owned();
+    assert!(message.contains("mapfile"), "理由が分からない: {message}");
+
+    // 普通に吸い出してから再挑戦すると、今度は通る(読めない所はないので即終わる)。
+    let first = ofr(&["image", source.to_str().unwrap(), output.to_str().unwrap()]);
+    assert_eq!(first.status.code(), Some(EXIT_OK));
+
+    let again = ofr(&[
+        "image",
+        source.to_str().unwrap(),
+        output.to_str().unwrap(),
+        "--retry-only",
+    ]);
+    assert_eq!(again.status.code(), Some(EXIT_OK), "{}", stdout(&again));
+
+    // 記録を捨ててやり直す指定も通る。
+    let reset = ofr(&[
+        "image",
+        source.to_str().unwrap(),
+        output.to_str().unwrap(),
+        "--reset-bad",
+    ]);
+    assert_eq!(reset.status.code(), Some(EXIT_OK), "{}", stdout(&reset));
+    assert_eq!(
+        std::fs::read(&source).unwrap(),
+        std::fs::read(&output).unwrap()
+    );
 }

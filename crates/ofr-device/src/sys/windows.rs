@@ -216,6 +216,15 @@ fn physical_drive_path(id: &str) -> PathBuf {
     }
 }
 
+/// デバイスが存在するか。
+///
+/// 抜き差しの検知に使う(PLAN.md 11.3)。アクセス権 0 で開くだけで IO は出さないので、
+/// 読み込みが返ってこなくなっている個体でもここは返る。
+pub fn device_present(id: &str) -> bool {
+    let path = physical_drive_path(id);
+    open_for_query(&path.to_string_lossy()).is_some()
+}
+
 /// `\\.\PhysicalDrive2` / `PhysicalDrive2` / `2` からドライブ番号を取り出す。
 fn drive_number(id: &str) -> Option<u32> {
     let digits: String = id

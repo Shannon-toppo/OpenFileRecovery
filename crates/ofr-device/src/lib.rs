@@ -80,12 +80,62 @@ pub fn open_device_with_timeout(
     max_abandoned: u32,
 ) -> Result<Box<dyn Device>> {
     let id = id.to_string();
-    let factory: DeviceFactory = Box::new(move || sys::platform::open_device(&id));
+    // 抜き差しすると ID が変わることがある(PLAN.md 11.3)。一度開けたデバイスの
+    // 素性を控えておき、同じ ID で開けなくなったら、それと一致するものを探す。
+    let known: std::sync::Mutex<Option<DeviceInfo>> = std::sync::Mutex::new(None);
+    let factory: DeviceFactory = Box::new(move || match sys::platform::open_device(&id) {
+        Ok(device) => {
+            *known.lock().expect("known poisoned") = Some(device.info().clone());
+            Ok(device)
+        }
+        Err(e) => {
+            let identity = known.lock().expect("known poisoned").clone();
+            let Some(identity) = identity else {
+                return Err(e);
+            };
+            let Some(other) = find_device_like(&identity) else {
+                return Err(e);
+            };
+            tracing::info!(from = %id, to = %other, "デバイスの ID が変わっている");
+            sys::platform::open_device(&other)
+        }
+    });
     Ok(Box::new(TimeoutDevice::new(
         factory,
         timeout,
         max_abandoned,
     )?))
+}
+
+/// デバイスノードが見えているか(PLAN.md 11.3)。
+///
+/// 抜き差しの検知に使う。列挙([`list_devices`])と違って外部コマンドを起こさず、
+/// IO も出さないので、読み込みが返ってこなくなっている個体でもすぐ返る。
+pub fn device_present(id: &str) -> bool {
+    sys::platform::device_present(id)
+}
+
+/// 同じ素性のデバイスを探して、その ID を返す。
+///
+/// 抜き差しで ID が変わった場合に元のデバイスを見つけ直すために使う。
+/// シリアルが取れていればシリアルで、なければ容量と表示名の一致で判定する。
+/// 起動ディスクは決して返さない(PLAN.md 6章 3項)。
+pub fn find_device_like(identity: &DeviceInfo) -> Option<String> {
+    let devices = list_devices().ok()?;
+    let same_serial = identity.serial.as_deref().filter(|s| !s.trim().is_empty());
+
+    devices
+        .into_iter()
+        .filter(|d| !d.is_system_disk)
+        .find(|d| match same_serial {
+            Some(serial) => d.serial.as_deref() == Some(serial),
+            None => {
+                d.size_bytes == identity.size_bytes
+                    && d.size_bytes > 0
+                    && d.display_name == identity.display_name
+            }
+        })
+        .map(|d| d.id)
 }
 
 /// 与えたパスが載っている物理デバイスの ID。判定できなければ `None`。

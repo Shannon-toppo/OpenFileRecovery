@@ -268,4 +268,10 @@ impl Device for TimeoutDevice {
         *guard = Some(Worker::spawn((self.factory)()?));
         Ok(true)
     }
+
+    fn recovered(&self) -> Result<bool> {
+        // 抜き差しで電源が入り直った。見捨てた本数の計数からやり直す(PLAN.md 11.3)。
+        self.abandoned.store(0, Ordering::Relaxed);
+        self.reopen()
+    }
 }

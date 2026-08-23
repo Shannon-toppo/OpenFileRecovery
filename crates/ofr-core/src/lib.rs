@@ -41,6 +41,7 @@ mod error;
 pub mod filter;
 mod job;
 mod jobs;
+pub mod replug;
 pub mod session;
 pub mod source;
 
