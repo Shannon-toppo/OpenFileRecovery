@@ -36,7 +36,7 @@ use windows_sys::Win32::System::Ioctl::{
 use windows_sys::Win32::System::SystemInformation::GetWindowsDirectoryW;
 
 use crate::align::{AlignedBuf, read_via_bounce};
-use crate::device::{Device, DeviceInfo, DeviceKind};
+use crate::device::{Device, DeviceInfo, DeviceKind, Route};
 use crate::error::{DeviceError, Result, classify_read_error};
 
 /// バウンスバッファの大きさ。1 回の生読み込みの上限でもある。
@@ -80,6 +80,8 @@ pub struct WindowsDevice {
 #[derive(Debug)]
 struct Inner {
     file: File,
+    /// 別経路のハンドル(バッファ付き)。要るまで開かない(PLAN.md 11.5)。
+    alternate: Option<File>,
     bounce: AlignedBuf,
 }
 
@@ -115,6 +117,7 @@ impl WindowsDevice {
         Ok(Self {
             inner: Mutex::new(Inner {
                 file,
+                alternate: None,
                 bounce: AlignedBuf::new(BOUNCE_SIZE, BOUNCE_ALIGN),
             }),
             path,
@@ -131,8 +134,27 @@ impl WindowsDevice {
 
 impl Device for WindowsDevice {
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize> {
+        self.read_at_via(Route::Primary, offset, buf)
+    }
+
+    /// Windows の別経路は `FILE_FLAG_NO_BUFFERING` を外したハンドル(PLAN.md 11.5)。
+    ///
+    /// 非バッファ IO は要求がほぼそのままデバイスへ行く。バッファ付きなら
+    /// キャッシュマネージャ側の経路を通るので、同じセクタでも通ることがある。
+    fn read_at_via(&self, route: Route, offset: u64, buf: &mut [u8]) -> Result<usize> {
         let mut inner = self.inner.lock().expect("WindowsDevice poisoned");
-        let Inner { file, bounce } = &mut *inner;
+        if route == Route::Alternate && inner.alternate.is_none() {
+            inner.alternate = Some(open_buffered(&self.path)?);
+        }
+        let Inner {
+            file,
+            alternate,
+            bounce,
+        } = &mut *inner;
+        let file = match route {
+            Route::Primary => file,
+            Route::Alternate => alternate.as_mut().expect("別経路のハンドル"),
+        };
         let block_size = self.info.block_size;
         read_via_bounce(
             offset,
@@ -162,9 +184,15 @@ impl Device for WindowsDevice {
         &self.info
     }
 
+    fn has_alternate(&self) -> bool {
+        true
+    }
+
     fn reopen(&self) -> Result<bool> {
         let mut inner = self.inner.lock().expect("WindowsDevice poisoned");
         inner.file = open_for_read(&self.path)?;
+        // 別経路も固まっていることがあるので、次に要るときに開き直させる。
+        inner.alternate = None;
         Ok(true)
     }
 }
@@ -261,6 +289,16 @@ fn open_for_read(path: &Path) -> Result<File> {
                 source: e,
             },
         }
+    })
+}
+
+/// 別経路用に、バッファ付き(`FILE_FLAG_NO_BUFFERING` なし)で開く(PLAN.md 11.5)。
+fn open_buffered(path: &Path) -> Result<File> {
+    let path_str = path.to_string_lossy().into_owned();
+    open_handle(&path_str, GENERIC_READ, 0).map_err(|e| DeviceError::Io {
+        offset: 0,
+        len: 0,
+        source: e,
     })
 }
 

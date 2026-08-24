@@ -33,8 +33,8 @@ pub use entry::{EntryKind, EntryQuality, EntryStatus, Extent, RecoveredEntry};
 pub use error::{FsError, Result};
 pub use extract::{ExtractOptions, ExtractStats};
 pub use scan::{
-    BootSource, FileSystem, FsKind, ScanOptions, ScanPhase, ScanProgress, ScanProgressFn,
-    VolumeInfo,
+    BootSource, FileSystem, FsKind, MetaRegion, ScanOptions, ScanPhase, ScanProgress,
+    ScanProgressFn, VolumeInfo, cluster_extents,
 };
 pub use time::{Timestamp, Timestamps};
 pub use tree::{EntryId, FileTree, ScanStats};

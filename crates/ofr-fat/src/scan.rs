@@ -18,7 +18,8 @@ use ofr_device::Device;
 use ofr_fs::fat::Fat32Table;
 use ofr_fs::{
     EntryId, EntryKind, EntryQuality, EntryStatus, Extent, FileSystem, FileTree, FsKind,
-    RecoveredEntry, Result, ScanOptions, ScanPhase, ScanProgress, ScanProgressFn, VolumeInfo,
+    MetaRegion, RecoveredEntry, Result, ScanOptions, ScanPhase, ScanProgress, ScanProgressFn,
+    VolumeInfo, cluster_extents,
 };
 
 use crate::bpb::Fat32Bpb;
@@ -233,6 +234,38 @@ impl FileSystem for Fat32Fs<'_> {
     fn scan(&self, options: &ScanOptions, progress: Option<ScanProgressFn>) -> Result<FileTree> {
         Walker::new(self, options, progress).run()
     }
+
+    /// 予約領域(ブートセクタとバックアップを含む)、FAT 表、ルートディレクトリ。
+    ///
+    /// FAT32 のバックアップブートセクタは予約領域の中(通常セクタ 6)にあるので、
+    /// 予約領域を丸ごと入れておけば別に数えなくてよい。
+    fn metadata_regions(&self) -> Vec<MetaRegion> {
+        let mut out = Vec::new();
+        let limit = self.device.len();
+        let mut push = |label: String, offset: u64, len: u64| {
+            let len = len.min(limit.saturating_sub(offset));
+            if len > 0 {
+                out.push(MetaRegion::new(label, offset, len));
+            }
+        };
+
+        let reserved = self.bpb.reserved_sectors as u64 * self.bpb.bytes_per_sector as u64;
+        push("予約領域(ブートセクタ)".to_string(), 0, reserved);
+        for i in 0..self.bpb.num_fats {
+            push(
+                format!("FAT 表 {}", i + 1),
+                self.bpb.fat_offset(i),
+                self.bpb.fat_bytes(),
+            );
+        }
+        let clusters = self.directory_clusters(self.bpb.root_cluster, false);
+        for extent in cluster_extents(&clusters, self.bpb.cluster_size() as u64, |c| {
+            self.bpb.cluster_offset(c)
+        }) {
+            push("ルートディレクトリ".to_string(), extent.offset, extent.len);
+        }
+        out
+    }
 }
 
 /// ボリュームラベルはルートディレクトリの volume-id エントリのほうが新しい。
@@ -359,6 +392,7 @@ impl<'a, 'dev> Walker<'a, 'dev> {
             .fs
             .directory_clusters(pending.cluster, pending.chain_lost);
         self.tree.stats.clusters_scanned += clusters.len() as u64;
+        self.record_extents(pending.parent, &clusters);
 
         for (index, &cluster) in clusters.iter().enumerate() {
             if self.stop() {
@@ -527,6 +561,21 @@ impl<'a, 'dev> Walker<'a, 'dev> {
                 self.fs.bpb.cluster_offset(cluster),
                 self.fs.volume.total_bytes,
             );
+        }
+    }
+
+    /// ディレクトリ自身の実体位置を項目に残す。
+    ///
+    /// 復元では使わない(ディレクトリはサイズ 0 として扱う)が、吸い出す範囲を
+    /// 組み立てるのに要る(PLAN.md 11.4)。ここを取っておかないと、範囲を限定して
+    /// 取ったイメージからツリーを辿り直せない。
+    fn record_extents(&mut self, id: Option<EntryId>, clusters: &[u32]) {
+        let Some(id) = id else { return };
+        let extents = cluster_extents(clusters, self.fs.bpb.cluster_size() as u64, |c| {
+            self.fs.bpb.cluster_offset(c)
+        });
+        if let Some(node) = self.tree.get_mut(id) {
+            node.extents = extents;
         }
     }
 

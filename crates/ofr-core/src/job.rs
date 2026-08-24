@@ -147,6 +147,26 @@ pub struct ImageRequest {
     /// 開始前に、不良として記録されている領域を未試行に戻すか(PLAN.md 11.3)。
     #[serde(default)]
     pub reset_bad: bool,
+    /// ブートセクタや FAT 表を先に確保するか(PLAN.md 11.4)。
+    ///
+    /// 途中で読めなくなっても、構造だけは残るようにする。
+    #[serde(default = "yes")]
+    pub metadata_first: bool,
+    /// 読む範囲を、この mapfile の取得済み (`+`) 領域に限る(PLAN.md 11.4)。
+    ///
+    /// `ofr scan --domain-out` が書くものを渡す。選んだファイルの領域だけを
+    /// 取り直すときに使う。
+    #[serde(default)]
+    pub domain: Option<PathBuf>,
+    /// 末尾から手前へ向かって読むか(PLAN.md 11.5)。
+    #[serde(default)]
+    pub reverse: bool,
+    /// 読めなかったセクタを別経路でも読み直すか(PLAN.md 11.5)。
+    #[serde(default = "yes")]
+    pub alt_route: bool,
+    /// リトライで拾えた範囲を何回読んで多数決を取るか(PLAN.md 11.5)。0 と 1 は多数決なし。
+    #[serde(default)]
+    pub verify: u32,
     /// デバイスが応答しなくなったとき、抜き差しを待つか(PLAN.md 11.3)。
     #[serde(default = "yes")]
     pub wait_on_stall: bool,

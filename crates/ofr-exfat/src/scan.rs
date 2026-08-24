@@ -16,7 +16,8 @@ use ofr_device::Device;
 use ofr_fs::fat::Fat32Table;
 use ofr_fs::{
     EntryId, EntryKind, EntryQuality, EntryStatus, Extent, FileSystem, FileTree, FsKind,
-    RecoveredEntry, Result, ScanOptions, ScanPhase, ScanProgress, ScanProgressFn, VolumeInfo,
+    MetaRegion, RecoveredEntry, Result, ScanOptions, ScanPhase, ScanProgress, ScanProgressFn,
+    VolumeInfo, cluster_extents,
 };
 
 use crate::boot::ExfatBoot;
@@ -32,6 +33,8 @@ const MAX_ASSUMED_DIR_CLUSTERS: usize = 16;
 const MAX_FILE_CLUSTERS: usize = 1 << 22;
 /// メモリに読み込むビットマップの上限(これを超える巨大ボリュームでは使わない)。
 const MAX_BITMAP_BYTES: u64 = 16 << 20;
+/// ブート領域 1 組のセクタ数(本体とバックアップで同じ)。
+const BOOT_REGION_SECTORS: u64 = 12;
 
 /// アロケーションビットマップ。クラスタ 2 が bit0。
 struct Bitmap {
@@ -54,6 +57,8 @@ pub struct ExfatFs<'a> {
     boot: ExfatBoot,
     fat: Fat32Table<'a>,
     bitmap: Option<Bitmap>,
+    /// アロケーションビットマップの実体位置(PLAN.md 11.4)。読めなければ空。
+    bitmap_extents: Vec<Extent>,
     volume: VolumeInfo,
 }
 
@@ -95,14 +100,20 @@ impl<'a> ExfatFs<'a> {
             boot,
             fat,
             bitmap: None,
+            bitmap_extents: Vec::new(),
         };
 
         // ルートからラベルとビットマップの位置を拾う。どちらも無くても走査はできる。
         let root = fs.read_directory(fs.boot.root_cluster, 0, false);
         let contents = dir::parse_directory(&root, 0);
         fs.volume.label = contents.volume_label;
-        if let Some((cluster, len)) = contents.bitmap {
-            fs.bitmap = fs.load_bitmap(cluster, len);
+        if let Some((cluster, len)) = contents.bitmap
+            && let Some((bitmap, clusters)) = fs.load_bitmap(cluster, len)
+        {
+            fs.bitmap_extents = cluster_extents(&clusters, fs.boot.cluster_size() as u64, |c| {
+                fs.boot.cluster_offset(c)
+            });
+            fs.bitmap = Some(bitmap);
         }
         if fs.bitmap.is_none() {
             fs.volume.notes.push(
@@ -124,7 +135,8 @@ impl<'a> ExfatFs<'a> {
         &self.boot
     }
 
-    fn load_bitmap(&self, first_cluster: u32, len: u64) -> Option<Bitmap> {
+    /// アロケーションビットマップを読む。使ったクラスタも返す(PLAN.md 11.4 の優先範囲用)。
+    fn load_bitmap(&self, first_cluster: u32, len: u64) -> Option<(Bitmap, Vec<u32>)> {
         if !self.is_valid_cluster(first_cluster) || len == 0 || len > MAX_BITMAP_BYTES {
             return None;
         }
@@ -141,6 +153,7 @@ impl<'a> ExfatFs<'a> {
         };
 
         let mut bits = Vec::with_capacity(len as usize);
+        let mut used = Vec::new();
         for cluster in clusters {
             let want = (len - bits.len() as u64).min(cluster_size) as usize;
             let mut buf = vec![0u8; want];
@@ -152,11 +165,12 @@ impl<'a> ExfatFs<'a> {
                 buf.fill(0);
             }
             bits.extend_from_slice(&buf);
+            used.push(cluster);
             if bits.len() as u64 >= len {
                 break;
             }
         }
-        (!bits.is_empty()).then_some(Bitmap { bits })
+        (!bits.is_empty()).then_some((Bitmap { bits }, used))
     }
 
     fn is_valid_cluster(&self, cluster: u32) -> bool {
@@ -323,6 +337,49 @@ impl FileSystem for ExfatFs<'_> {
     fn scan(&self, options: &ScanOptions, progress: Option<ScanProgressFn>) -> Result<FileTree> {
         Walker::new(self, options, progress).run()
     }
+
+    /// ブート領域(本体とバックアップ)、FAT 表、アロケーションビットマップ、
+    /// ルートディレクトリ。
+    fn metadata_regions(&self) -> Vec<MetaRegion> {
+        let mut out = Vec::new();
+        let limit = self.device.len();
+        let mut push = |label: String, offset: u64, len: u64| {
+            let len = len.min(limit.saturating_sub(offset));
+            if len > 0 {
+                out.push(MetaRegion::new(label, offset, len));
+            }
+        };
+
+        // exFAT のブート領域は 12 セクタで 1 組。同じものが続けてもう 1 組置かれる。
+        let sector = self.boot.bytes_per_sector as u64;
+        push("ブート領域".to_string(), 0, BOOT_REGION_SECTORS * sector);
+        push(
+            "バックアップブート領域".to_string(),
+            BOOT_REGION_SECTORS * sector,
+            BOOT_REGION_SECTORS * sector,
+        );
+        for i in 0..self.boot.number_of_fats {
+            push(
+                format!("FAT 表 {}", i + 1),
+                self.boot.fat_offset(i),
+                self.boot.fat_bytes(),
+            );
+        }
+        for extent in &self.bitmap_extents {
+            push(
+                "アロケーションビットマップ".to_string(),
+                extent.offset,
+                extent.len,
+            );
+        }
+        let clusters = self.directory_clusters(self.boot.root_cluster, 0, false);
+        for extent in cluster_extents(&clusters, self.boot.cluster_size() as u64, |c| {
+            self.boot.cluster_offset(c)
+        }) {
+            push("ルートディレクトリ".to_string(), extent.offset, extent.len);
+        }
+        out
+    }
 }
 
 /// 走査待ちのディレクトリ。
@@ -436,6 +493,7 @@ impl<'a, 'dev> Walker<'a, 'dev> {
             self.fs
                 .directory_clusters(pending.cluster, pending.size, pending.contiguous);
         self.tree.stats.clusters_scanned += clusters.len() as u64;
+        self.record_extents(pending.parent, &clusters);
 
         let mut data = Vec::new();
         for &cluster in &clusters {
@@ -602,6 +660,21 @@ impl<'a, 'dev> Walker<'a, 'dev> {
                 self.fs.boot.cluster_offset(cluster),
                 self.fs.volume.total_bytes,
             );
+        }
+    }
+
+    /// ディレクトリ自身の実体位置を項目に残す。
+    ///
+    /// 復元では使わない(ディレクトリはサイズ 0 として扱う)が、吸い出す範囲を
+    /// 組み立てるのに要る(PLAN.md 11.4)。ここを取っておかないと、範囲を限定して
+    /// 取ったイメージからツリーを辿り直せない。
+    fn record_extents(&mut self, id: Option<EntryId>, clusters: &[u32]) {
+        let Some(id) = id else { return };
+        let extents = cluster_extents(clusters, self.fs.boot.cluster_size() as u64, |c| {
+            self.fs.boot.cluster_offset(c)
+        });
+        if let Some(node) = self.tree.get_mut(id) {
+            node.extents = extents;
         }
     }
 

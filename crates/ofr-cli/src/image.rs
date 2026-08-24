@@ -76,6 +76,39 @@ pub struct ImageArgs {
     #[arg(long, conflicts_with = "retry_only")]
     pub reset_bad: bool,
 
+    /// 読む範囲を、この mapfile の取得済み (`+`) 領域だけに限る。
+    ///
+    /// `ofr scan --domain-out` で書き出したものを渡すと、選んだファイルの
+    /// クラスタ範囲だけを取り直せる。GNU ddrescue の `--domain-mapfile` と同じ形式。
+    #[arg(long, value_name = "MAPFILE")]
+    pub domain: Option<PathBuf>,
+
+    /// ブートセクタや FAT 表を先に確保せず、頭から順に読む。
+    #[arg(long)]
+    pub no_metadata_first: bool,
+
+    /// 末尾から手前へ向かって読む。
+    ///
+    /// ブリッジの先読みが不良セクタの手前まで巻き添えにする個体では、
+    /// 反対側から詰めると 1 個ぶん多く取れることがある(PLAN.md 11.5)。
+    #[arg(long)]
+    pub reverse: bool,
+
+    /// 読めなかったセクタを別経路で読み直さない。
+    ///
+    /// 既定では、リトライパスで通常経路が駄目だったセクタを別経路
+    /// (macOS はバッファ付きのブロックデバイス、Windows はバッファ付きハンドル)
+    /// でもう一度読む。
+    #[arg(long)]
+    pub no_alt_route: bool,
+
+    /// リトライで拾えた範囲を N 回読んで多数決を取る(`0`/`1` で無効)。
+    ///
+    /// 読むたびに内容が変わる個体で効く。揺れた範囲は「不確か」として mapfile に
+    /// 記録する(PLAN.md 11.5)。
+    #[arg(long, default_value_t = 0, value_name = "N")]
+    pub verify: u32,
+
     /// デバイスが応答しなくなっても、抜き差しを待たずに打ち切る。
     #[arg(long)]
     pub no_wait: bool,
@@ -142,7 +175,7 @@ pub fn run(args: ImageArgs) -> Result<Outcome, Box<dyn std::error::Error>> {
     }
 
     let tty = std::io::stderr().is_terminal();
-    let options = build_options(&args, tty)?;
+    let mut options = build_options(&args, tty)?;
 
     println!(
         "復旧元: {} ({}, {})",
@@ -156,6 +189,24 @@ pub fn run(args: ImageArgs) -> Result<Outcome, Box<dyn std::error::Error>> {
     }
     if !io_timeout.is_zero() && !std::path::Path::new(&args.source).is_file() {
         println!("読み込みの制限時間: {}", format::duration(io_timeout));
+    }
+
+    // 読む範囲の限定と、先に確保する範囲(PLAN.md 11.4)。
+    if let Some(path) = &args.domain {
+        let domain = ofr_image::Domain::load(path)?;
+        if domain.is_empty() {
+            return Err(format!("{} に取得対象の領域がない", path.display()).into());
+        }
+        println!(
+            "対象範囲: {} ({} 区間, {} から)",
+            format::bytes(domain.total()),
+            domain.regions().len(),
+            path.display(),
+        );
+        options.domain = Some(domain);
+    }
+    if !args.no_metadata_first && !args.retry_only {
+        options.priority = metadata_priority(device.as_ref());
     }
     println!();
 
@@ -218,6 +269,33 @@ fn check_safety(info: &DeviceInfo, args: &ImageArgs) -> Result<(), Box<dyn std::
     Ok(())
 }
 
+/// メタデータの位置を割り出して、先に確保する範囲にする(PLAN.md 11.4)。
+///
+/// ブートセクタ、FAT / アロケーションビットマップ、ルートディレクトリを最初に
+/// 取っておけば、途中で読めなくなっても「どこに何があったか」は残る。
+/// 位置が分からなければ何もしない(頭から順に読む)。
+fn metadata_priority(device: &dyn Device) -> Option<ofr_image::Domain> {
+    let plan = ofr_core::domain::metadata_plan(device);
+    if plan.is_empty() {
+        println!("メタデータの位置が分からないので、先頭から順に読む。");
+        return None;
+    }
+
+    // 同じラベルが並ぶ(FAT 表が 2 枚など)ので、続きは 1 つにまとめて出す。
+    let mut labels: Vec<&str> = Vec::new();
+    for region in &plan.regions {
+        if labels.last() != Some(&region.label.as_str()) {
+            labels.push(&region.label);
+        }
+    }
+    println!(
+        "先に取る: {} ({})",
+        labels.join("、"),
+        format::bytes(plan.domain.total()),
+    );
+    Some(plan.domain)
+}
+
 fn build_options(args: &ImageArgs, tty: bool) -> Result<ImageOptions, Box<dyn std::error::Error>> {
     let sector_size = match &args.sector_size {
         Some(s) => Some(u32::try_from(parse_size(s)?)?),
@@ -238,6 +316,9 @@ fn build_options(args: &ImageArgs, tty: bool) -> Result<ImageOptions, Box<dyn st
         retry: !args.no_retry,
         retry_only: args.retry_only,
         reset_bad: args.reset_bad,
+        reverse: args.reverse,
+        alt_route: !args.no_alt_route,
+        verify: args.verify,
         // 端末でなければ 1 行ずつ流れるので、頻度を落とす。
         progress_interval: if tty {
             Duration::from_millis(100)
@@ -356,6 +437,24 @@ fn print_summary(summary: &ImageSummary, map_path: Option<&Path>) {
     if summary.stalls > 0 {
         println!("抜き差し待ち: {} 回", summary.stalls);
     }
+    if summary.alt_rescues > 0 {
+        println!(
+            "別経路で回収: {}(通常の経路では読めなかった分)",
+            format::bytes(summary.alt_rescues)
+        );
+    }
+    if summary.resized_rescues > 0 {
+        println!(
+            "転送単位を変えて回収: {}",
+            format::bytes(summary.resized_rescues)
+        );
+    }
+    if summary.uncertain > 0 {
+        println!(
+            "不確か: {}(読むたびに中身が変わった範囲)",
+            format::bytes(summary.uncertain)
+        );
+    }
     if summary.reopens > 0 {
         println!("開き直し: {} 回", summary.reopens);
     }
@@ -375,6 +474,7 @@ fn print_summary(summary: &ImageSummary, map_path: Option<&Path>) {
         println!(
             "読めなかった所だけを狙うなら --retry-only、記録を捨ててやり直すなら --reset-bad。"
         );
+        println!("向きを変えて読み直す --reverse も、個体によっては効く。");
         if let Some(p) = map_path {
             println!("不良領域の一覧: {}", p.display());
         }

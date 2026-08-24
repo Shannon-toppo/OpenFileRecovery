@@ -11,6 +11,9 @@
 //! - **無応答**: 読み込みが永久に返らない(コントローラが固まり、割り込み不可の
 //!   待ちからスレッドが戻らなくなるケース。PLAN.md 11.2 のタイムアウト経路の検証用)。
 //! - **未整列拒否**: セクタ境界に整列していない読み込みを拒否する(Windows 非バッファIO 相当)。
+//! - **別経路でだけ読める**: 通常経路では失敗し、[`Route::Alternate`] なら読める
+//!   (PLAN.md 11.5 の経路変えの検証用)。
+//! - **内容が揺れる**: 読むたびに違う中身を返す(多数決 `--verify` の検証用)。
 //!
 //! 読み込みの記録(オフセットと長さの列)も取れるので、
 //! 「シーケンシャルに読んでいるか」「読み込み単位を縮小したか」を検証できる。
@@ -21,7 +24,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
 use crate::align::is_aligned;
-use crate::device::{Device, DeviceInfo, DeviceKind, clamp_read};
+use crate::device::{Device, DeviceInfo, DeviceKind, Route, clamp_read};
 use crate::error::{DeviceError, Result};
 
 /// 注入する不良の種類。
@@ -40,6 +43,15 @@ enum FaultKind {
     UntilReopen { healed: AtomicBool },
     /// 読み込みが返らない。呼んだスレッドはそのまま戻らない。
     Hang,
+    /// 通常経路では失敗し、別経路([`Route::Alternate`])なら読める(PLAN.md 11.5)。
+    AlternateOnly,
+    /// 読めるが、読むたびに中身が変わる(PLAN.md 11.5 の多数決の検証用)。
+    ///
+    /// `stable_after` 回目からは同じ内容を返す。0 なら永久に揺れ続ける。
+    Unstable {
+        stable_after: u32,
+        attempts: AtomicU32,
+    },
 }
 
 #[derive(Debug)]
@@ -59,6 +71,8 @@ pub struct MockStats {
     pub failed_reads: u64,
     /// [`Device::reopen`] が呼ばれた回数。
     pub reopen_calls: u64,
+    /// 別経路([`Route::Alternate`])で読まれた回数(PLAN.md 11.5)。
+    pub alternate_calls: u64,
 }
 
 /// テスト用の合成デバイス。
@@ -70,10 +84,13 @@ pub struct MockDevice {
     read_delay: Option<Duration>,
     require_alignment: bool,
     max_read_len: Option<usize>,
+    min_read_len: Option<usize>,
     read_calls: AtomicU64,
     bytes_read: AtomicU64,
     failed_reads: AtomicU64,
     reopen_calls: AtomicU64,
+    alternate_calls: AtomicU64,
+    has_alternate: bool,
     read_log: Option<Mutex<Vec<(u64, usize)>>>,
 }
 
@@ -115,6 +132,7 @@ impl MockDevice {
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
             failed_reads: self.failed_reads.load(Ordering::Relaxed),
             reopen_calls: self.reopen_calls.load(Ordering::Relaxed),
+            alternate_calls: self.alternate_calls.load(Ordering::Relaxed),
         }
     }
 
@@ -152,7 +170,18 @@ impl MockDevice {
 
 impl Device for MockDevice {
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize> {
+        self.read_at_via(Route::Primary, offset, buf)
+    }
+
+    fn has_alternate(&self) -> bool {
+        self.has_alternate
+    }
+
+    fn read_at_via(&self, route: Route, offset: u64, buf: &mut [u8]) -> Result<usize> {
         self.read_calls.fetch_add(1, Ordering::Relaxed);
+        if route == Route::Alternate {
+            self.alternate_calls.fetch_add(1, Ordering::Relaxed);
+        }
         if let Some(log) = &self.read_log {
             log.lock()
                 .expect("read_log poisoned")
@@ -168,6 +197,17 @@ impl Device for MockDevice {
                 offset,
                 len: buf.len(),
                 block_size,
+            });
+        }
+
+        // 小さすぎる転送を受け付けないブリッジを模す(PLAN.md 11.5 の転送単位変え)。
+        if let Some(min) = self.min_read_len
+            && buf.len() < min
+        {
+            self.failed_reads.fetch_add(1, Ordering::Relaxed);
+            return Err(DeviceError::Media {
+                offset,
+                len: buf.len(),
             });
         }
 
@@ -232,12 +272,40 @@ impl Device for MockDevice {
                         return Err(DeviceError::Media { offset, len: want });
                     }
                 }
-                FaultKind::Slow { .. } | FaultKind::Hang => {}
+                FaultKind::AlternateOnly => {
+                    // 通常経路では読めない。別経路なら通る(PLAN.md 11.5)。
+                    if route != Route::Alternate {
+                        self.failed_reads.fetch_add(1, Ordering::Relaxed);
+                        return Err(DeviceError::Media { offset, len: want });
+                    }
+                }
+                FaultKind::Slow { .. } | FaultKind::Hang | FaultKind::Unstable { .. } => {}
             }
         }
 
         let start = offset as usize;
         buf[..want].copy_from_slice(&self.data[start..start + want]);
+
+        // 内容が揺れる領域は、読むたびに違う値を返す。
+        for fault in self.overlapping(&range) {
+            let FaultKind::Unstable {
+                stable_after,
+                attempts,
+            } = &fault.kind
+            else {
+                continue;
+            };
+            let seen = attempts.fetch_add(1, Ordering::Relaxed);
+            if *stable_after > 0 && seen >= *stable_after {
+                continue;
+            }
+            // 揺れているのが分かればよいので、重なった範囲の先頭バイトだけ変える。
+            let at = fault.range.start.max(offset) - offset;
+            if let Some(b) = buf.get_mut(at as usize) {
+                *b = b.wrapping_add(seen as u8).wrapping_add(1);
+            }
+        }
+
         self.bytes_read.fetch_add(want as u64, Ordering::Relaxed);
         Ok(want)
     }
@@ -276,7 +344,9 @@ pub struct MockDeviceBuilder {
     read_delay: Option<Duration>,
     require_alignment: bool,
     max_read_len: Option<usize>,
+    min_read_len: Option<usize>,
     record_reads: bool,
+    has_alternate: bool,
     name: String,
     removable: bool,
     is_system_disk: bool,
@@ -294,7 +364,9 @@ impl MockDeviceBuilder {
             read_delay: None,
             require_alignment: false,
             max_read_len: None,
+            min_read_len: None,
             record_reads: false,
+            has_alternate: false,
             name: "mock".to_string(),
             removable: true,
             is_system_disk: false,
@@ -377,6 +449,38 @@ impl MockDeviceBuilder {
         self
     }
 
+    /// 通常経路では失敗し、別経路でだけ読める領域(PLAN.md 11.5)。
+    ///
+    /// 指定すると、このデバイスは別経路を持つ([`Device::has_alternate`] が真)。
+    pub fn alternate_range(mut self, offset: u64, len: u64) -> Self {
+        self.has_alternate = true;
+        self.faults.push(Fault {
+            range: offset..offset + len,
+            kind: FaultKind::AlternateOnly,
+        });
+        self
+    }
+
+    /// 別経路を持つことにするか。[`MockDeviceBuilder::alternate_range`] を使うと自動で真になる。
+    pub fn alternate(mut self, has_alternate: bool) -> Self {
+        self.has_alternate = has_alternate;
+        self
+    }
+
+    /// 読めるが、読むたびに中身が変わる領域(PLAN.md 11.5 の多数決の検証用)。
+    ///
+    /// `stable_after` 回目からは同じ内容に落ち着く。0 なら揺れ続ける。
+    pub fn unstable_range(mut self, offset: u64, len: u64, stable_after: u32) -> Self {
+        self.faults.push(Fault {
+            range: offset..offset + len,
+            kind: FaultKind::Unstable {
+                stable_after,
+                attempts: AtomicU32::new(0),
+            },
+        });
+        self
+    }
+
     /// 全読み込みに一律で挟む遅延。
     pub fn read_delay(mut self, delay: Duration) -> Self {
         self.read_delay = Some(delay);
@@ -392,6 +496,14 @@ impl MockDeviceBuilder {
     /// 1回の読み込みの上限。超える要求はエラーにする。
     pub fn max_read_len(mut self, max: usize) -> Self {
         self.max_read_len = Some(max);
+        self
+    }
+
+    /// 1回の読み込みの下限。これより短い要求は [`DeviceError::Media`] にする。
+    ///
+    /// 小さい転送を受け付けないブリッジを模す(PLAN.md 11.5 の転送単位変えの検証用)。
+    pub fn min_read_len(mut self, min: usize) -> Self {
+        self.min_read_len = Some(min);
         self
     }
 
@@ -444,10 +556,13 @@ impl MockDeviceBuilder {
             read_delay: self.read_delay,
             require_alignment: self.require_alignment,
             max_read_len: self.max_read_len,
+            min_read_len: self.min_read_len,
             read_calls: AtomicU64::new(0),
             bytes_read: AtomicU64::new(0),
             failed_reads: AtomicU64::new(0),
             reopen_calls: AtomicU64::new(0),
+            alternate_calls: AtomicU64::new(0),
+            has_alternate: self.has_alternate,
             read_log: self.record_reads.then(|| Mutex::new(Vec::new())),
         }
     }

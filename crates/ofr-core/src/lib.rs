@@ -35,6 +35,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod domain;
 pub mod dto;
 pub mod elevate;
 mod error;

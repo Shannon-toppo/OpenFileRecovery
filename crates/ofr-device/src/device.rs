@@ -90,6 +90,32 @@ impl DeviceInfo {
     }
 }
 
+/// 読み込みの経路(PLAN.md 11.5)。
+///
+/// 同じセクタでも要求の出し方を変えると通ることがある。ブリッジや
+/// カーネル側の別経路を通ると、1 個ぶん多く取れることがある。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Route {
+    /// 普段の経路。macOS は raw デバイス、Windows は非バッファ IO。
+    #[default]
+    Primary,
+    /// 別経路。macOS はバッファ付きのブロックデバイス(`/dev/diskN`)、
+    /// Windows は `FILE_FLAG_NO_BUFFERING` を外したハンドル。
+    ///
+    /// カーネル側で別のリトライが走るので、raw で駄目でも通ることがある。
+    /// 別経路を持たないバックエンドでは [`Route::Primary`] と同じ。
+    Alternate,
+}
+
+impl fmt::Display for Route {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Route::Primary => "通常経路",
+            Route::Alternate => "別経路",
+        })
+    }
+}
+
 /// 読み取り専用のブロックデバイス。
 ///
 /// # 実装の契約
@@ -144,6 +170,23 @@ pub trait Device: Send + Sync {
         Ok(buf)
     }
 
+    /// 別の経路を持っているか(PLAN.md 11.5)。
+    ///
+    /// 偽なら [`Device::read_at_via`] に [`Route::Alternate`] を渡しても
+    /// 普段と同じ読み込みになるので、呼ぶだけ無駄になる。
+    fn has_alternate(&self) -> bool {
+        false
+    }
+
+    /// 経路を指定して読む(PLAN.md 11.5)。
+    ///
+    /// 読めなかったセクタに対する最後の手当て。既定では経路を無視して
+    /// [`Device::read_at`] と同じ読み込みをする。
+    fn read_at_via(&self, route: Route, offset: u64, buf: &mut [u8]) -> Result<usize> {
+        let _ = route;
+        self.read_at(offset, buf)
+    }
+
     /// デバイスハンドルを開き直す。開き直したなら `true`。
     ///
     /// USB コントローラが一時的に固まり、ハンドルを作り直すと復帰するケースへの
@@ -176,6 +219,12 @@ impl<D: Device + ?Sized> Device for &D {
     fn info(&self) -> &DeviceInfo {
         (**self).info()
     }
+    fn has_alternate(&self) -> bool {
+        (**self).has_alternate()
+    }
+    fn read_at_via(&self, route: Route, offset: u64, buf: &mut [u8]) -> Result<usize> {
+        (**self).read_at_via(route, offset, buf)
+    }
     fn reopen(&self) -> Result<bool> {
         (**self).reopen()
     }
@@ -197,6 +246,12 @@ impl<D: Device + ?Sized> Device for Box<D> {
     fn info(&self) -> &DeviceInfo {
         (**self).info()
     }
+    fn has_alternate(&self) -> bool {
+        (**self).has_alternate()
+    }
+    fn read_at_via(&self, route: Route, offset: u64, buf: &mut [u8]) -> Result<usize> {
+        (**self).read_at_via(route, offset, buf)
+    }
     fn reopen(&self) -> Result<bool> {
         (**self).reopen()
     }
@@ -217,6 +272,12 @@ impl<D: Device + ?Sized> Device for std::sync::Arc<D> {
     }
     fn info(&self) -> &DeviceInfo {
         (**self).info()
+    }
+    fn has_alternate(&self) -> bool {
+        (**self).has_alternate()
+    }
+    fn read_at_via(&self, route: Route, offset: u64, buf: &mut [u8]) -> Result<usize> {
+        (**self).read_at_via(route, offset, buf)
     }
     fn reopen(&self) -> Result<bool> {
         (**self).reopen()

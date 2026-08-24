@@ -109,6 +109,7 @@
     "output": "Output",
     "source": "Source",
     "phase": {
+      "metadata": "Metadata first",
       "copy": "Copy pass",
       "trim": "Trim pass",
       "scrape": "Scrape pass",

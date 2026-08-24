@@ -28,7 +28,7 @@ use std::time::Duration;
 
 use tracing::warn;
 
-use crate::device::{Device, DeviceInfo, clamp_read};
+use crate::device::{Device, DeviceInfo, Route, clamp_read};
 use crate::error::{DeviceError, Result};
 
 /// デバイスを開き直すための生成関数。
@@ -54,6 +54,7 @@ pub const DEFAULT_MAX_ABANDONED: u32 = 8;
 /// 見捨てたスレッドが呼び出し側のバッファに書き込むことがあってはならないので、
 /// バッファの所有権をワーカーへ移し、結果と一緒に返してもらう。
 struct Request {
+    route: Route,
     offset: u64,
     len: usize,
     buf: Vec<u8>,
@@ -84,7 +85,7 @@ impl Worker {
             .name("ofr-io".to_string())
             .spawn(move || {
                 while let Ok(mut req) = req_rx.recv() {
-                    let result = device.read_at(req.offset, &mut req.buf[..req.len]);
+                    let result = device.read_at_via(req.route, req.offset, &mut req.buf[..req.len]);
                     // 送信に失敗する = 見捨てられた。デバイスを落として終わる。
                     if res_tx
                         .send(Response {
@@ -120,6 +121,10 @@ pub struct TimeoutDevice {
     worker: Mutex<Option<Worker>>,
     abandoned: AtomicU32,
     len: u64,
+    /// 包んだデバイスが別経路を持っているか(PLAN.md 11.5)。
+    ///
+    /// デバイス本体はワーカーが握っているので、開いた時点で控えておく。
+    has_alternate: bool,
     info: DeviceInfo,
 }
 
@@ -142,6 +147,7 @@ impl TimeoutDevice {
         let device = factory()?;
         let len = device.len();
         let info = device.info().clone();
+        let has_alternate = device.has_alternate();
         Ok(Self {
             factory,
             timeout,
@@ -149,6 +155,7 @@ impl TimeoutDevice {
             worker: Mutex::new(Some(Worker::spawn(device))),
             abandoned: AtomicU32::new(0),
             len,
+            has_alternate,
             info,
         })
     }
@@ -173,6 +180,18 @@ enum Outcome {
 
 impl Device for TimeoutDevice {
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize> {
+        self.read_at_via(Route::Primary, offset, buf)
+    }
+
+    fn has_alternate(&self) -> bool {
+        self.has_alternate
+    }
+
+    /// 別経路の読み込みにも同じ制限時間をかける(PLAN.md 11.2 / 11.5)。
+    ///
+    /// 経路を変えたところで固まるときは固まるので、ここを素通しにすると
+    /// 「返らない読み込み」が復活してしまう。
+    fn read_at_via(&self, route: Route, offset: u64, buf: &mut [u8]) -> Result<usize> {
         let Some(want) = clamp_read(offset, buf.len(), self.len) else {
             return Ok(0);
         };
@@ -190,6 +209,7 @@ impl Device for TimeoutDevice {
                 work.resize(want, 0);
             }
             let sent = worker.tx.send(Request {
+                route,
                 offset,
                 len: want,
                 buf: work,
