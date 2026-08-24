@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ofr_device::{Device, DeviceError, DeviceKind, MockDevice};
+use ofr_device::{Device, DeviceError, DeviceKind, MockDevice, Route};
 
 #[test]
 fn reads_patterned_data() {
@@ -243,4 +243,55 @@ fn explicit_data_defines_size() {
     assert_eq!(dev.len(), 3);
     assert_eq!(dev.read_vec_at(0, 3).unwrap(), b"OFR");
     assert_eq!(dev.data(), b"OFR");
+}
+
+/// 別経路でだけ読める領域(PLAN.md 11.5)。
+#[test]
+fn alternate_route_reads_what_the_primary_cannot() {
+    let dev = MockDevice::builder(4096)
+        .pattern()
+        .alternate_range(1024, 512)
+        .build();
+    assert!(dev.has_alternate());
+
+    let mut buf = [0u8; 512];
+    assert!(dev.read_at(1024, &mut buf).unwrap_err().is_media());
+    assert_eq!(
+        dev.read_at_via(Route::Alternate, 1024, &mut buf).unwrap(),
+        512
+    );
+    assert_eq!(buf[0], MockDevice::pattern_byte(1024));
+    assert_eq!(dev.stats().alternate_calls, 1);
+
+    // 不良のない範囲は、どちらの経路でも読める。
+    assert_eq!(dev.read_at(0, &mut buf).unwrap(), 512);
+    assert_eq!(dev.read_at_via(Route::Primary, 0, &mut buf).unwrap(), 512);
+}
+
+/// 中身が揺れる領域は、読むたびに違う値を返す(PLAN.md 11.5 の多数決の検証用)。
+#[test]
+fn unstable_range_changes_between_reads() {
+    let dev = MockDevice::builder(4096)
+        .pattern()
+        .unstable_range(0, 512, 2)
+        .build();
+
+    let first = dev.read_vec_at(0, 512).unwrap();
+    let second = dev.read_vec_at(0, 512).unwrap();
+    assert_ne!(first, second, "揺れていない");
+
+    // 3 回目からは落ち着き、本来の中身に戻る。
+    let third = dev.read_vec_at(0, 512).unwrap();
+    assert_eq!(third, dev.read_vec_at(0, 512).unwrap());
+    assert_eq!(third[0], MockDevice::pattern_byte(0));
+}
+
+/// 別経路を持たないデバイスでは、経路を指定しても普段どおり読む。
+#[test]
+fn devices_without_an_alternate_ignore_the_route() {
+    let dev = MockDevice::patterned(4096);
+    assert!(!dev.has_alternate());
+    let mut buf = [0u8; 16];
+    assert_eq!(dev.read_at_via(Route::Alternate, 0, &mut buf).unwrap(), 16);
+    assert_eq!(buf[0], MockDevice::pattern_byte(0));
 }

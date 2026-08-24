@@ -261,3 +261,56 @@ fn does_not_panic_on_garbage() {
     // 何が見つかっても構わない。panic しないことだけが条件 (PLAN.md 6章 5項)。
     let _ = tree.len();
 }
+
+/// 先に確保するメタデータの位置を返せること(PLAN.md 11.4)。
+#[test]
+fn reports_where_the_metadata_lives() {
+    let scenario = scenarios::fat32_deleted();
+    let device = device(scenario.image);
+    let fs = Fat32Fs::open(&device).expect("FAT32 として開けること");
+    let bpb = fs.bpb();
+    let regions = fs.metadata_regions();
+
+    let labels: Vec<&str> = regions.iter().map(|r| r.label.as_str()).collect();
+    assert!(
+        labels.contains(&"FAT 表 1") && labels.contains(&"ルートディレクトリ"),
+        "拾えていない: {labels:?}"
+    );
+
+    // 予約領域はブートセクタから始まり、バックアップ (セクタ 6) を含む。
+    let reserved = &regions[0];
+    assert_eq!(reserved.extent.offset, 0);
+    assert!(reserved.extent.len >= 7 * u64::from(bpb.bytes_per_sector));
+
+    let fat = regions.iter().find(|r| r.label == "FAT 表 1").unwrap();
+    assert_eq!(fat.extent.offset, bpb.fat_offset(0));
+    assert_eq!(fat.extent.len, bpb.fat_bytes());
+
+    let root = regions
+        .iter()
+        .find(|r| r.label == "ルートディレクトリ")
+        .unwrap();
+    assert_eq!(root.extent.offset, bpb.cluster_offset(bpb.root_cluster));
+
+    for region in &regions {
+        assert!(
+            region.extent.end() <= device.len(),
+            "{} がデバイスの外に出ている",
+            region.label
+        );
+    }
+}
+
+/// クイックフォーマット後(ルートも FAT も消えている)でも位置は返せること。
+#[test]
+fn reports_metadata_after_a_quick_format() {
+    let scenario = scenarios::fat32_quick_format();
+    let device = device(scenario.image);
+    let fs = Fat32Fs::open(&device).expect("FAT32 として開けること");
+    let regions = fs.metadata_regions();
+    assert!(
+        regions.iter().any(|r| r.label == "FAT 表 1"),
+        "拾えていない: {:?}",
+        regions.iter().map(|r| &r.label).collect::<Vec<_>>()
+    );
+}

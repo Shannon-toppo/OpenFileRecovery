@@ -109,6 +109,7 @@
     "output": "出力先",
     "source": "復旧元",
     "phase": {
+      "metadata": "メタデータ優先",
       "copy": "コピーパス",
       "trim": "トリムパス",
       "scrape": "スクレイプパス",

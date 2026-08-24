@@ -2,6 +2,7 @@
 
 use std::error::Error;
 use std::io::{IsTerminal, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
@@ -57,6 +58,14 @@ pub struct ScanArgs {
     /// 表示する件数の上限。0 で無制限。
     #[arg(long, default_value_t = 200)]
     pub limit: usize,
+
+    /// 絞り込んだ項目のデータ位置を mapfile として書き出す(PLAN.md 11.4)。
+    ///
+    /// これを `ofr image --domain` に渡すと、その範囲だけを吸い出せる。
+    /// メタデータとディレクトリの領域も一緒に入れるので、書き出したイメージは
+    /// そのまま解析できる。
+    #[arg(long, value_name = "MAPFILE")]
+    pub domain_out: Option<PathBuf>,
 }
 
 /// 走査を実行する。
@@ -114,6 +123,19 @@ pub fn run(args: ScanArgs) -> Result<Outcome, Box<dyn Error>> {
         .filter(|e| filter.matches(e))
         .collect();
 
+    // 表示より先に書き出す。書けないなら、一覧を出す前に知らせたい。
+    let domain_bytes = match &args.domain_out {
+        Some(path) => Some(write_domain(
+            path,
+            device.len(),
+            volume.offset,
+            fs.as_ref(),
+            &tree,
+            &selected,
+        )?),
+        None => None,
+    };
+
     if args.json {
         print_json(fs.volume(), &tree, &selected);
     } else if args.tree {
@@ -124,11 +146,68 @@ pub fn run(args: ScanArgs) -> Result<Outcome, Box<dyn Error>> {
         print_summary(&tree, &selected, &filter);
     }
 
+    if let (Some(path), Some(bytes)) = (&args.domain_out, domain_bytes)
+        && !args.json
+    {
+        println!();
+        println!(
+            "対象範囲を書き出した: {} ({})",
+            path.display(),
+            format::bytes(bytes)
+        );
+        println!(
+            "この範囲だけを吸い出すには: ofr image <復旧元> <出力> --domain {}",
+            path.display()
+        );
+    }
+
     Ok(if selected.is_empty() {
         Outcome::Incomplete
     } else {
         Outcome::Complete
     })
+}
+
+/// 絞り込んだ項目のデータ位置を mapfile に書き出す(PLAN.md 11.4)。
+///
+/// ddrescue は `--domain-mapfile` を人手で作らせるが、こちらは FS パーサを
+/// 自前で持っているので走査結果から出せる。ファイルの領域だけでなく、
+/// メタデータ(ブートセクタ・FAT 表・ルート)と全ディレクトリの領域も入れる。
+/// 入れておかないと、書き出したイメージをもう一度解析できないため。
+///
+/// 書き出したバイト数を返す。
+fn write_domain(
+    path: &Path,
+    device_len: u64,
+    volume_offset: u64,
+    fs: &dyn ofr_fs::FileSystem,
+    tree: &FileTree,
+    selected: &[&RecoveredEntry],
+) -> Result<u64, Box<dyn Error>> {
+    let metadata = ofr_image::Domain::new(
+        fs.metadata_regions()
+            .iter()
+            .map(|r| (r.extent.offset + volume_offset, r.extent.len)),
+    );
+    let dirs = tree.entries().iter().filter(|e| e.is_dir());
+    let files = selected.iter().filter(|e| !e.is_dir()).copied();
+
+    let mut regions: Vec<(u64, u64)> = metadata.regions().iter().map(|r| (r.pos, r.size)).collect();
+    for entry in dirs.chain(files) {
+        regions.extend(
+            entry
+                .extents
+                .iter()
+                .map(|x| (x.offset + volume_offset, x.len)),
+        );
+    }
+
+    let domain = ofr_image::Domain::new(regions);
+    if domain.is_empty() {
+        return Err("書き出す領域がない(項目が 1 つも選ばれていない)".into());
+    }
+    domain.to_map(device_len).save(path)?;
+    Ok(domain.total())
 }
 
 fn print_volume(volume: &VolumeInfo, offset: u64, partition: &str) {

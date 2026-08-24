@@ -7,16 +7,21 @@
 //! # Mapfile. Created by Open File Recovery 0.0.2
 //! # current_pos  current_status  current_pass
 //! 0x00001000     ?               1
+//! # uncertain  0x00000800  0x00000200
 //! #      pos        size  status
 //! 0x00000000  0x00001000  +
 //! 0x00001000  0x00000200  -
 //! ```
+//!
+//! `# uncertain` の行だけは本家にない拡張で、多数決で内容が揃わなかった範囲を
+//! 持つ(PLAN.md 11.5)。ddrescue はコメントとして読み飛ばすので互換は崩れない。
 
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::blocks::{Block, BlockList, BlockStatus};
+use crate::domain::Domain;
 use crate::error::{ImageError, Result};
 
 /// mapfile 先頭の状態行が示す「いま何をしているか」。
@@ -78,6 +83,12 @@ pub struct MapFile {
     pub current_pass: u32,
     /// 領域マップ。
     pub blocks: BlockList,
+    /// 読めたが内容が揺れた範囲(PLAN.md 11.5 の多数決)。
+    ///
+    /// ddrescue の書式にこの状態はないので、`# uncertain <pos> <size>` という
+    /// コメント行で持つ。ddrescue はコメントを読み飛ばすので互換は保たれ、
+    /// こちらは読み直したときに拾える。
+    pub uncertain: Domain,
 }
 
 impl MapFile {
@@ -88,6 +99,7 @@ impl MapFile {
             current_status: CurrentStatus::Copying,
             current_pass: 1,
             blocks: BlockList::new(total),
+            uncertain: Domain::default(),
         }
     }
 
@@ -98,9 +110,14 @@ impl MapFile {
     pub fn parse(text: &str) -> Result<Self> {
         let mut current: Option<(u64, CurrentStatus, u32)> = None;
         let mut blocks: Vec<Block> = Vec::new();
+        let mut uncertain: Vec<(u64, u64)> = Vec::new();
 
         for (i, raw) in text.lines().enumerate() {
             let line_no = i + 1;
+            if let Some(region) = parse_uncertain(raw) {
+                uncertain.push(region);
+                continue;
+            }
             let line = strip_comment(raw).trim();
             if line.is_empty() {
                 continue;
@@ -147,6 +164,7 @@ impl MapFile {
             current_status,
             current_pass,
             blocks: BlockList::from_blocks(total, blocks),
+            uncertain: Domain::new(uncertain),
         })
     }
 
@@ -194,6 +212,11 @@ impl MapFile {
             self.current_status.as_char(),
             self.current_pass
         );
+        // 内容が揺れた範囲(PLAN.md 11.5)。ddrescue にこの状態はないので
+        // コメントで持つ。向こうは読み飛ばし、こちらは読み直したときに拾う。
+        for r in self.uncertain.regions() {
+            let _ = writeln!(s, "# uncertain  0x{:08X}  0x{:08X}", r.pos, r.size);
+        }
         let _ = writeln!(s, "#      pos        size  status");
         for b in self.blocks.blocks() {
             let _ = writeln!(
@@ -206,6 +229,16 @@ impl MapFile {
         }
         s
     }
+}
+
+/// `# uncertain <pos> <size>` を読む(PLAN.md 11.5)。他のコメントなら `None`。
+fn parse_uncertain(line: &str) -> Option<(u64, u64)> {
+    let rest = line.trim().strip_prefix('#')?.trim();
+    let rest = rest.strip_prefix("uncertain")?;
+    let mut fields = rest.split_whitespace();
+    let pos = parse_u64(fields.next()?)?;
+    let size = parse_u64(fields.next()?)?;
+    Some((pos, size))
 }
 
 fn strip_comment(line: &str) -> &str {
@@ -279,6 +312,30 @@ mod tests {
 
         let parsed = MapFile::parse(&map.to_text()).unwrap();
         assert_eq!(parsed, map);
+    }
+
+    #[test]
+    fn keeps_uncertain_regions_as_comments() {
+        let mut map = MapFile::new(8192);
+        map.blocks.mark(0, 8192, BlockStatus::Finished);
+        map.uncertain = Domain::new([(1024, 512), (4096, 512)]);
+
+        let text = map.to_text();
+        assert!(
+            text.contains("# uncertain  0x00000400  0x00000200"),
+            "コメントで書かれていない: {text}"
+        );
+
+        // 読み直すと戻る。ddrescue から見れば、ただのコメント。
+        let parsed = MapFile::parse(&text).unwrap();
+        assert_eq!(parsed, map);
+        assert_eq!(parsed.uncertain.total(), 1024);
+    }
+
+    #[test]
+    fn ignores_other_comments() {
+        let map = MapFile::parse(DDRESCUE_SAMPLE).unwrap();
+        assert!(map.uncertain.is_empty());
     }
 
     #[test]

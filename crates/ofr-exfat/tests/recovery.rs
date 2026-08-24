@@ -170,3 +170,43 @@ fn does_not_panic_on_garbage() {
         .expect("落ちないこと");
     let _ = tree.len();
 }
+
+/// 先に確保するメタデータの位置を返せること(PLAN.md 11.4)。
+#[test]
+fn reports_where_the_metadata_lives() {
+    let scenario = scenarios::exfat_deleted();
+    let device = device(scenario.image);
+    let fs = ExfatFs::open(&device).expect("exFAT として開けること");
+    let boot = fs.boot();
+    let regions = fs.metadata_regions();
+
+    let labels: Vec<&str> = regions.iter().map(|r| r.label.as_str()).collect();
+    for want in [
+        "ブート領域",
+        "バックアップブート領域",
+        "FAT 表 1",
+        "アロケーションビットマップ",
+        "ルートディレクトリ",
+    ] {
+        assert!(labels.contains(&want), "{want} を拾えていない: {labels:?}");
+    }
+
+    assert_eq!(regions[0].extent.offset, 0);
+    let fat = regions.iter().find(|r| r.label == "FAT 表 1").unwrap();
+    assert_eq!(fat.extent.offset, boot.fat_offset(0));
+    assert_eq!(fat.extent.len, boot.fat_bytes());
+
+    let root = regions
+        .iter()
+        .find(|r| r.label == "ルートディレクトリ")
+        .unwrap();
+    assert_eq!(root.extent.offset, boot.cluster_offset(boot.root_cluster));
+
+    for region in &regions {
+        assert!(
+            region.extent.end() <= device.len(),
+            "{} がデバイスの外に出ている",
+            region.label
+        );
+    }
+}

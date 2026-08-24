@@ -142,6 +142,12 @@ export interface ImageSummaryDto {
   reopens: number;
   /** デバイスが応答しなくなって抜き差しを待った回数。 */
   stalls: number;
+  /** 別経路 (バッファ付き / 非整列) で拾えたバイト数。 */
+  altRescues: number;
+  /** 転送単位を変えて拾えたバイト数。 */
+  resizedRescues: number;
+  /** 読めたが、読み直すたびに内容が変わったバイト数。 */
+  uncertain: number;
   elapsedSecs: number;
   cancelled: boolean;
   complete: boolean;

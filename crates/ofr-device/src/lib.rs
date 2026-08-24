@@ -35,7 +35,7 @@ mod slice;
 mod sys;
 mod timeout;
 
-pub use device::{Device, DeviceInfo, DeviceKind};
+pub use device::{Device, DeviceInfo, DeviceKind, Route};
 pub use error::{DeviceError, Result};
 pub use file::{DEFAULT_BLOCK_SIZE, FileDevice};
 #[cfg(feature = "mock")]

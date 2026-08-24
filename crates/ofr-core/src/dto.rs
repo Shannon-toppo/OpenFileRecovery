@@ -270,6 +270,12 @@ pub struct ImageSummaryDto {
     pub reopens: u32,
     /// デバイスが応答しなくなって抜き差しを待った回数。
     pub stalls: u32,
+    /// 別経路で拾えたバイト数(PLAN.md 11.5)。
+    pub alt_rescues: u64,
+    /// 転送単位を変えて拾えたバイト数(PLAN.md 11.5)。
+    pub resized_rescues: u64,
+    /// 読めたが内容が揺れたバイト数(PLAN.md 11.5)。
+    pub uncertain: u64,
     /// 所要秒数。
     pub elapsed_secs: f64,
     /// 中断されたか。

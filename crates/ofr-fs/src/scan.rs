@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
+use crate::entry::Extent;
 use crate::error::Result;
 use crate::tree::FileTree;
 
@@ -168,6 +169,29 @@ pub struct ScanProgress {
 /// 進捗コールバック。
 pub type ScanProgressFn = Box<dyn FnMut(&ScanProgress) + Send>;
 
+/// メタデータが置かれている領域(PLAN.md 11.4)。
+///
+/// 死にかけの個体は残り時間が有限なので、**どこを先に読むか**が結果を左右する。
+/// ブートセクタ、FAT / アロケーションビットマップ、ディレクトリ領域を先に確保して
+/// おけば、途中で読めなくなっても「どこに何があったか」は残る。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetaRegion {
+    /// 何の領域か(画面表示用)。
+    pub label: String,
+    /// 位置。ボリューム先頭からのバイト数。
+    pub extent: Extent,
+}
+
+impl MetaRegion {
+    /// ラベルと範囲から作る。
+    pub fn new(label: impl Into<String>, offset: u64, len: u64) -> Self {
+        Self {
+            label: label.into(),
+            extent: Extent { offset, len },
+        }
+    }
+}
+
 /// 読み取り専用のファイルシステム解析。
 pub trait FileSystem {
     /// ボリューム情報。
@@ -175,4 +199,34 @@ pub trait FileSystem {
 
     /// 走査してツリーを返す。
     fn scan(&self, options: &ScanOptions, progress: Option<ScanProgressFn>) -> Result<FileTree>;
+
+    /// メタデータが置かれている領域(PLAN.md 11.4)。
+    ///
+    /// 走査より前に呼べる(ブートセクタから計算できる範囲と、ルートディレクトリの
+    /// チェーンだけを見る)。吸い出しで先に確保する範囲として使う。
+    /// 位置が割り出せなければ空でよい。
+    fn metadata_regions(&self) -> Vec<MetaRegion>;
+}
+
+/// クラスタ番号の並びを、連続している所でまとめて範囲にする。
+///
+/// [`FileSystem::metadata_regions`] の実装用。`offset_of` はクラスタ番号から
+/// ボリューム先頭からのオフセットを返す関数。
+pub fn cluster_extents(
+    clusters: &[u32],
+    cluster_size: u64,
+    offset_of: impl Fn(u32) -> u64,
+) -> Vec<Extent> {
+    let mut out: Vec<Extent> = Vec::new();
+    for &cluster in clusters {
+        let offset = offset_of(cluster);
+        match out.last_mut() {
+            Some(last) if last.end() == offset => last.len += cluster_size,
+            _ => out.push(Extent {
+                offset,
+                len: cluster_size,
+            }),
+        }
+    }
+    out
 }

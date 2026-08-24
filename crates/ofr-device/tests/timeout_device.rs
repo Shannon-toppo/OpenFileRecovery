@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use ofr_device::{Device, DeviceError, DeviceFactory, MockDevice, TimeoutDevice};
+use ofr_device::{Device, DeviceError, DeviceFactory, MockDevice, Route, TimeoutDevice};
 
 const SIZE: u64 = 64 * 1024;
 const HANG_AT: u64 = 8192;
@@ -131,4 +131,29 @@ fn is_shareable_across_threads() {
     for h in handles {
         h.join().unwrap();
     }
+}
+
+/// 別経路の読み込みもワーカー越しに、同じ制限時間で行うこと(PLAN.md 11.5)。
+#[test]
+fn alternate_reads_go_through_the_worker() {
+    let f: DeviceFactory = Box::new(|| {
+        Ok(Box::new(
+            MockDevice::builder(SIZE)
+                .pattern()
+                .alternate_range(HANG_AT, 512)
+                .build(),
+        ) as Box<dyn Device>)
+    });
+    let dev = TimeoutDevice::new(f, TIMEOUT, 4).unwrap();
+    assert!(dev.has_alternate(), "別経路を持つデバイスを包んでいる");
+
+    let mut buf = vec![0u8; 512];
+    assert!(dev.read_at(HANG_AT, &mut buf).unwrap_err().is_media());
+    assert_eq!(
+        dev.read_at_via(Route::Alternate, HANG_AT, &mut buf)
+            .unwrap(),
+        512
+    );
+    assert_eq!(buf[0], MockDevice::pattern_byte(HANG_AT));
+    assert_eq!(dev.abandoned(), 0);
 }

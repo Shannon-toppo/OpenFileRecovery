@@ -25,7 +25,7 @@ use std::process::Command;
 use std::sync::Mutex;
 
 use crate::align::{AlignedBuf, read_via_bounce};
-use crate::device::{Device, DeviceInfo, DeviceKind};
+use crate::device::{Device, DeviceInfo, DeviceKind, Route};
 use crate::error::{DeviceError, Result, classify_read_error};
 
 mod plist;
@@ -60,6 +60,8 @@ const DKIOCGETMAXBLOCKCOUNTREAD: u64 = ior(b'd', 64, size_of::<u64>());
 pub struct MacDevice {
     inner: Mutex<Inner>,
     path: PathBuf,
+    /// バッファ付きのブロックデバイス(`/dev/diskN`)。別経路(PLAN.md 11.5)。
+    block_path: PathBuf,
     len: u64,
     info: DeviceInfo,
 }
@@ -67,6 +69,8 @@ pub struct MacDevice {
 #[derive(Debug)]
 struct Inner {
     file: File,
+    /// 別経路のハンドル。要るまで開かない(使わないなら開く意味がない)。
+    alternate: Option<File>,
     bounce: AlignedBuf,
 }
 
@@ -98,8 +102,10 @@ impl MacDevice {
         Ok(Self {
             inner: Mutex::new(Inner {
                 file,
+                alternate: None,
                 bounce: AlignedBuf::new(bounce_size, BOUNCE_ALIGN),
             }),
+            block_path: PathBuf::from(format!("/dev/{bsd}")),
             path,
             len,
             info,
@@ -114,8 +120,28 @@ impl MacDevice {
 
 impl Device for MacDevice {
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<usize> {
+        self.read_at_via(Route::Primary, offset, buf)
+    }
+
+    /// macOS の別経路はバッファ付きのブロックデバイス(PLAN.md 11.5)。
+    ///
+    /// raw デバイス(`/dev/rdiskN`)はカーネルのバッファを通さないので、要求が
+    /// ほぼそのままメディアへ行く。`/dev/diskN` は間にバッファキャッシュが入り、
+    /// カーネル側で別のリトライが走るため、raw で駄目でも通ることがある。
+    fn read_at_via(&self, route: Route, offset: u64, buf: &mut [u8]) -> Result<usize> {
         let mut inner = self.inner.lock().expect("MacDevice poisoned");
-        let Inner { file, bounce } = &mut *inner;
+        if route == Route::Alternate && inner.alternate.is_none() {
+            inner.alternate = Some(open_read_only(&self.block_path)?);
+        }
+        let Inner {
+            file,
+            alternate,
+            bounce,
+        } = &mut *inner;
+        let file = match route {
+            Route::Primary => file,
+            Route::Alternate => alternate.as_mut().expect("別経路のハンドル"),
+        };
         let block_size = self.info.block_size;
         read_via_bounce(
             offset,
@@ -133,6 +159,10 @@ impl Device for MacDevice {
         )
     }
 
+    fn has_alternate(&self) -> bool {
+        true
+    }
+
     fn len(&self) -> u64 {
         self.len
     }
@@ -148,6 +178,8 @@ impl Device for MacDevice {
     fn reopen(&self) -> Result<bool> {
         let mut inner = self.inner.lock().expect("MacDevice poisoned");
         inner.file = open_read_only(&self.path)?;
+        // 別経路も固まっていることがあるので、次に要るときに開き直させる。
+        inner.alternate = None;
         Ok(true)
     }
 }

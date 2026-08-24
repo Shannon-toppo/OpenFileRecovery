@@ -3,7 +3,7 @@
 //! パーティション内のファイルシステムを解析するときに使う。解析側はオフセット 0 から
 //! 始まるボリュームとして扱えるので、パーティションの開始位置を意識しなくてよくなる。
 
-use crate::device::{Device, DeviceInfo, clamp_read};
+use crate::device::{Device, DeviceInfo, Route, clamp_read};
 use crate::error::{DeviceError, Result};
 
 /// 親デバイスの `[offset, offset + len)` だけを見せるビュー。
@@ -83,6 +83,18 @@ impl<D: Device> Device for SliceDevice<D> {
 
     fn info(&self) -> &DeviceInfo {
         &self.info
+    }
+
+    fn has_alternate(&self) -> bool {
+        self.inner.has_alternate()
+    }
+
+    fn read_at_via(&self, route: Route, offset: u64, buf: &mut [u8]) -> Result<usize> {
+        let Some(want) = clamp_read(offset, buf.len(), self.len) else {
+            return Ok(0);
+        };
+        self.inner
+            .read_at_via(route, self.offset + offset, &mut buf[..want])
     }
 
     fn reopen(&self) -> Result<bool> {

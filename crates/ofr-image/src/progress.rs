@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use crate::blocks::{Block, BlockList};
+use crate::blocks::Block;
 
 /// 進捗イベントに載せる領域マップの最大区間数。
 ///
@@ -15,6 +15,10 @@ pub const MAP_SEGMENTS: usize = 256;
 /// イメージングのパス。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pass {
+    /// メタデータなど、先に確保しておく範囲だけを読む(PLAN.md 11.4)。
+    ///
+    /// [`ImageOptions::priority`](crate::ImageOptions::priority) を指定したときだけ走る。
+    Priority,
     /// 大きめのブロックで読める所を全部確保する。
     Copy,
     /// 不良域の端をセクタ単位で詰める。
@@ -29,6 +33,7 @@ impl Pass {
     /// 画面表示用の名前。
     pub fn label(self) -> &'static str {
         match self {
+            Pass::Priority => "メタデータ",
             Pass::Copy => "コピー",
             Pass::Trim => "トリム",
             Pass::Scrape => "スクレイプ",
@@ -52,7 +57,12 @@ pub struct Progress {
     pub pass_number: u32,
     /// いま読んでいる位置。
     pub position: u64,
-    /// デバイス全長。
+    /// 対象範囲の全長。
+    ///
+    /// 普段はデバイス全長。[`ImageOptions::domain`](crate::ImageOptions::domain) で
+    /// 範囲を限定した場合は、その合計になる(PLAN.md 11.4)。
+    /// 以下の [`rescued`](Self::rescued) / [`bad`](Self::bad) /
+    /// [`pending`](Self::pending) も対象範囲の中だけを数える。
     pub total: u64,
     /// 取得済みバイト数。
     pub rescued: u64,
@@ -71,13 +81,16 @@ pub struct Progress {
     /// 領域マップ(取得済み / 不良 / 未試行)。GUI が帯グラフにする。
     ///
     /// [`MAP_SEGMENTS`] 区間まで間引いてあるので、そのまま描いてよい。
+    /// こちらは範囲を限定していてもデバイス全域を覆う(帯グラフはデバイスの絵なので、
+    /// 対象外の範囲は未試行のまま出る)。
     pub map: Vec<Block>,
 }
 
 /// イメージング完了時のサマリ。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageSummary {
-    /// デバイス全長。
+    /// 対象範囲の全長。普段はデバイス全長、範囲を限定した場合はその合計
+    /// (PLAN.md 11.4)。以下の各バイト数も対象範囲の中だけを数える。
     pub total: u64,
     /// 取得済みバイト数。
     pub rescued: u64,
@@ -96,6 +109,17 @@ pub struct ImageSummary {
     pub reopens: u32,
     /// デバイスが応答しなくなって足踏みした回数(PLAN.md 11.3)。
     pub stalls: u32,
+    /// 別経路で拾えたバイト数(PLAN.md 11.5)。
+    ///
+    /// 通常経路で読めず、[`ofr_device::Route::Alternate`] で読めた分。
+    pub alt_rescues: u64,
+    /// 転送単位と整列を変えて拾えたバイト数(PLAN.md 11.5)。
+    pub resized_rescues: u64,
+    /// 読めたが、読み直すたびに内容が変わったバイト数(PLAN.md 11.5)。
+    ///
+    /// [`ImageOptions::verify`](crate::ImageOptions::verify) を指定したときだけ増える。
+    /// 前回の実行で記録した分も含む(mapfile に持ち越される)。
+    pub uncertain: u64,
     /// 所要時間。
     pub elapsed: Duration,
     /// キャンセルで打ち切ったか。
@@ -114,29 +138,6 @@ impl ImageSummary {
             return 1.0;
         }
         self.rescued as f64 / self.total as f64
-    }
-
-    pub(crate) fn from_blocks(
-        blocks: &BlockList,
-        errors: u64,
-        timeouts: u64,
-        reopens: u32,
-        stalls: u32,
-        elapsed: Duration,
-        cancelled: bool,
-    ) -> Self {
-        Self {
-            total: blocks.total(),
-            rescued: blocks.rescued(),
-            bad: blocks.bytes_with(crate::blocks::BlockStatus::BadSector),
-            remaining: blocks.remaining(),
-            errors,
-            timeouts,
-            reopens,
-            stalls,
-            elapsed,
-            cancelled,
-        }
     }
 }
 

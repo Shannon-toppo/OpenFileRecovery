@@ -22,6 +22,7 @@
 #![deny(unsafe_code)]
 
 pub mod blocks;
+pub mod domain;
 mod error;
 mod imager;
 pub mod mapfile;
@@ -29,6 +30,7 @@ mod progress;
 mod writer;
 
 pub use blocks::{Block, BlockList, BlockStatus};
+pub use domain::{Domain, Region};
 pub use error::{ImageError, Result};
 pub use imager::{ImageOptions, Imager};
 pub use mapfile::{CurrentStatus, MapFile};
