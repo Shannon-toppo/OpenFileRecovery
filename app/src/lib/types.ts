@@ -137,7 +137,11 @@ export interface ImageSummaryDto {
   bad: number;
   remaining: number;
   errors: number;
+  /** 応答が返らず見捨てた読み込みの回数 (errors にも含まれる)。 */
+  timeouts: number;
   reopens: number;
+  /** デバイスが応答しなくなって抜き差しを待った回数。 */
+  stalls: number;
   elapsedSecs: number;
   cancelled: boolean;
   complete: boolean;
@@ -285,9 +289,19 @@ export type JobRequest =
       mapfile?: string;
       retries?: number;
       blockSize?: number;
+      /** 1 回の読み込みを見限るまでの秒数。0 で制限なし。既定は 30。 */
+      ioTimeoutSecs?: number;
       trim?: boolean;
       scrape?: boolean;
       retry?: boolean;
+      /** 読めなかった領域だけを再試行する。前回の mapfile が要る。 */
+      retryOnly?: boolean;
+      /** 不良の記録を捨ててから始める。 */
+      resetBad?: boolean;
+      /** 応答しなくなったとき抜き差しを待つか。既定は true。 */
+      waitOnStall?: boolean;
+      /** 抜き差しを待つ上限秒数。既定は 300。 */
+      waitTimeoutSecs?: number;
       unmount?: boolean;
       overwrite?: boolean;
     }

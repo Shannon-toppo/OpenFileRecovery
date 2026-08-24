@@ -8,6 +8,8 @@
 //! - **低速領域**: 読めるが遅い(Copy pass の速度閾値スキップの検証用)。
 //! - **ハンドル固着**: [`Device::reopen`] を呼ぶまで失敗し続ける
 //!   (USB コントローラが固まり、開き直すと復帰するケース)。
+//! - **無応答**: 読み込みが永久に返らない(コントローラが固まり、割り込み不可の
+//!   待ちからスレッドが戻らなくなるケース。PLAN.md 11.2 のタイムアウト経路の検証用)。
 //! - **未整列拒否**: セクタ境界に整列していない読み込みを拒否する(Windows 非バッファIO 相当)。
 //!
 //! 読み込みの記録(オフセットと長さの列)も取れるので、
@@ -36,6 +38,8 @@ enum FaultKind {
     Slow { delay: Duration },
     /// [`Device::reopen`] が呼ばれるまで失敗し続ける。
     UntilReopen { healed: AtomicBool },
+    /// 読み込みが返らない。呼んだスレッドはそのまま戻らない。
+    Hang,
 }
 
 #[derive(Debug)]
@@ -190,6 +194,16 @@ impl Device for MockDevice {
             std::thread::sleep(d);
         }
 
+        // 無応答領域はここで戻らない。実機で読み込みが返らなくなる状態を模す。
+        if self
+            .overlapping(&range)
+            .any(|f| matches!(f.kind, FaultKind::Hang))
+        {
+            loop {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+
         // 低速領域の遅延を先に適用してから、不良判定を行う。
         for fault in self.overlapping(&range) {
             if let FaultKind::Slow { delay } = &fault.kind {
@@ -218,7 +232,7 @@ impl Device for MockDevice {
                         return Err(DeviceError::Media { offset, len: want });
                     }
                 }
-                FaultKind::Slow { .. } => {}
+                FaultKind::Slow { .. } | FaultKind::Hang => {}
             }
         }
 
@@ -346,6 +360,19 @@ impl MockDeviceBuilder {
             kind: FaultKind::UntilReopen {
                 healed: AtomicBool::new(false),
             },
+        });
+        self
+    }
+
+    /// 読み込みが永久に返らない領域。
+    ///
+    /// 固まった USB コントローラを模す。**この範囲を読んだスレッドは戻らない**ので、
+    /// [`crate::TimeoutDevice`] のように呼び出し側で見捨てる仕掛けがない限り、
+    /// テストがそこで止まる。
+    pub fn hang_range(mut self, offset: u64, len: u64) -> Self {
+        self.faults.push(Fault {
+            range: offset..offset + len,
+            kind: FaultKind::Hang,
         });
         self
     }

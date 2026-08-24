@@ -42,6 +42,27 @@ pub fn open_source(source: &str) -> Result<Arc<dyn Device>> {
     }
 }
 
+/// 読み込みに制限時間を設けて復旧元を開く(PLAN.md 11.2)。
+///
+/// 固まったメディアで読み込みが返らなくなっても、制限時間を過ぎたら
+/// 「読めなかった領域」として先へ進める。`timeout` が 0 のときと、復旧元が
+/// イメージファイルのときは [`open_source`] と同じ(ローカルのファイル読み込みが
+/// 返らなくなることは想定しない)。
+pub fn open_source_with_timeout(
+    source: &str,
+    timeout: std::time::Duration,
+    max_abandoned: u32,
+) -> Result<Arc<dyn Device>> {
+    if timeout.is_zero() || Path::new(source).is_file() {
+        return open_source(source);
+    }
+    Ok(Arc::from(ofr_device::open_device_with_timeout(
+        source,
+        timeout,
+        max_abandoned,
+    )?))
+}
+
 /// 復旧元として選んでよいデバイスか、列挙情報だけで確かめる(PLAN.md 6章 3項)。
 ///
 /// デバイスを開く前に呼ぶ。開くには管理者権限が要るので、権限エラーで
@@ -184,6 +205,30 @@ pub fn parse_size(text: &str) -> std::result::Result<u64, String> {
         .ok_or_else(|| format!("サイズが範囲外: {text}"))
 }
 
+/// `30s` `500ms` `5m` のような時間指定を読む。単位がなければ秒。
+///
+/// `0` は「制限なし」の意味で使うので受け付ける。
+pub fn parse_duration(text: &str) -> std::result::Result<std::time::Duration, String> {
+    let t = text.trim();
+    let (digits, unit_ms) = if let Some(rest) = t.strip_suffix("ms") {
+        (rest, 1.0)
+    } else if let Some(rest) = t.strip_suffix('s') {
+        (rest, 1000.0)
+    } else if let Some(rest) = t.strip_suffix('m') {
+        (rest, 60.0 * 1000.0)
+    } else {
+        (t, 1000.0)
+    };
+    let n: f64 = digits
+        .trim()
+        .parse()
+        .map_err(|_| format!("時間として読めない: {text}"))?;
+    if !n.is_finite() || n < 0.0 {
+        return Err(format!("時間が範囲外: {text}"));
+    }
+    Ok(std::time::Duration::from_secs_f64(n * unit_ms / 1000.0))
+}
+
 #[cfg(test)]
 mod tests {
     use ofr_device::MockDevice;
@@ -253,6 +298,20 @@ mod tests {
         assert_eq!(parse_size("2g"), Ok(2 << 30));
         assert!(parse_size("x").is_err());
         assert!(parse_size("0").is_err());
+    }
+
+    #[test]
+    fn parses_durations() {
+        use std::time::Duration;
+        assert_eq!(parse_duration("30s"), Ok(Duration::from_secs(30)));
+        assert_eq!(parse_duration("500ms"), Ok(Duration::from_millis(500)));
+        assert_eq!(parse_duration("2m"), Ok(Duration::from_secs(120)));
+        // 単位がなければ秒。
+        assert_eq!(parse_duration("5"), Ok(Duration::from_secs(5)));
+        // 0 は「制限なし」の意味で使うので受け付ける。
+        assert_eq!(parse_duration("0"), Ok(Duration::ZERO));
+        assert!(parse_duration("-1").is_err());
+        assert!(parse_duration("しばらく").is_err());
     }
 
     #[test]

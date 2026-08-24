@@ -176,6 +176,15 @@ pub fn open_device(id: &str) -> Result<Box<dyn Device>> {
     Ok(Box::new(MacDevice::open(id)?))
 }
 
+/// デバイスノードがあるか。
+///
+/// 抜き差しの検知に使う(PLAN.md 11.3)。`stat` するだけなので、読み込みが
+/// 返ってこなくなっている個体でもここは返る。`diskutil` は固まった個体で
+/// 返らないことがあるため、列挙ではなくこれを使う。
+pub fn device_present(id: &str) -> bool {
+    raw_device_path(id).exists()
+}
+
 /// パスが載っているディスクの BSD 名(`disk4` など)。
 ///
 /// 復元先が復旧元と同じデバイスでないかの判定に使う(PLAN.md 6章 2項)。

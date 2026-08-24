@@ -6,12 +6,16 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
+use ofr_core::replug::ReplugState;
 use ofr_device::{Device, DeviceInfo};
-use ofr_image::{ImageOptions, ImageSummary, Imager};
+use ofr_image::{ImageOptions, ImageSummary, Imager, StallAction};
 
 use crate::Outcome;
 use crate::format;
-use crate::source::{self, install_cancel_handler, parse_size, same_device};
+use crate::source::{self, install_cancel_handler, parse_duration, parse_size, same_device};
+
+/// 応答しない読み込みを見捨てる上限。これを超えたら打ち切って抜き差しを促す。
+const MAX_ABANDONED_READS: u32 = ofr_device::DEFAULT_MAX_ABANDONED;
 
 /// `ofr image` の引数。
 #[derive(Debug, clap::Args)]
@@ -42,6 +46,44 @@ pub struct ImageArgs {
     #[arg(long)]
     pub sector_size: Option<String>,
 
+    /// 1 回の読み込みを見限るまでの時間(`30s`, `500ms`)。`0` で制限なし。
+    ///
+    /// 固まったメディアは読み込みが返ってこなくなる。制限時間を過ぎたら
+    /// その読み込みを見捨てて先へ進む(PLAN.md 11.2)。
+    #[arg(long, default_value = "30s")]
+    pub io_timeout: String,
+
+    /// 読み込みに失敗したときに読み飛ばす量の上限。
+    #[arg(long, default_value = "16M")]
+    pub skip_size: String,
+
+    /// 失敗しても読み飛ばさない(従来どおり順に読む)。
+    #[arg(long, conflicts_with = "skip_size")]
+    pub no_skip: bool,
+
+    /// スクレイプ/リトライの探索単位の上限。セクタサイズにすると総当たりになる。
+    #[arg(long, default_value = "64K")]
+    pub probe_size: String,
+
+    /// 読めなかった領域だけを再試行する(未試行の領域には触らない)。
+    ///
+    /// 時間をおいて、冷ましてから、別のリーダーで、といった条件を変えた
+    /// 再挑戦に使う。前回の mapfile が要る。
+    #[arg(long)]
+    pub retry_only: bool,
+
+    /// 前回「読めなかった」と記録した領域を、未試行に戻してから始める。
+    #[arg(long, conflicts_with = "retry_only")]
+    pub reset_bad: bool,
+
+    /// デバイスが応答しなくなっても、抜き差しを待たずに打ち切る。
+    #[arg(long)]
+    pub no_wait: bool,
+
+    /// 抜き差しを待つ時間の上限(`5m`, `30s`)。
+    #[arg(long, default_value = "5m", conflicts_with = "no_wait")]
+    pub wait_timeout: String,
+
     /// トリムパスを行わない。
     #[arg(long)]
     pub no_trim: bool,
@@ -69,7 +111,8 @@ pub fn run(args: ImageArgs) -> Result<Outcome, Box<dyn std::error::Error>> {
     // (開くには管理者権限が要るので、権限エラーで理由が隠れないように)。
     source::check_source_selectable(&args.source)?;
 
-    let device = source::open_source(&args.source)?;
+    let io_timeout = parse_duration(&args.io_timeout)?;
+    let device = source::open_source_with_timeout(&args.source, io_timeout, MAX_ABANDONED_READS)?;
     let info = device.info().clone();
     check_safety(&info, &args)?;
 
@@ -111,6 +154,9 @@ pub fn run(args: ImageArgs) -> Result<Outcome, Box<dyn std::error::Error>> {
     if let Some(p) = &map_path {
         println!("mapfile: {}", p.display());
     }
+    if !io_timeout.is_zero() && !std::path::Path::new(&args.source).is_file() {
+        println!("読み込みの制限時間: {}", format::duration(io_timeout));
+    }
     println!();
 
     let cancel = Arc::new(AtomicBool::new(false));
@@ -119,11 +165,19 @@ pub fn run(args: ImageArgs) -> Result<Outcome, Box<dyn std::error::Error>> {
         "中断する。mapfile を書き出すので、同じコマンドで再開できる。",
     );
 
-    let summary = Imager::new(device.as_ref())
+    let mut imager = Imager::new(device.as_ref())
         .with_options(options)
-        .with_cancel(cancel)
-        .with_progress(progress_reporter(tty))
-        .run(&args.output, map_path.as_deref())?;
+        .with_cancel(Arc::clone(&cancel))
+        .with_progress(progress_reporter(tty));
+    if !args.no_wait {
+        imager = imager.with_stall_handler(stall_handler(
+            info.clone(),
+            parse_duration(&args.wait_timeout)?,
+            Arc::clone(&cancel),
+            tty,
+        ));
+    }
+    let summary = imager.run(&args.output, map_path.as_deref())?;
 
     if tty {
         eprintln!();
@@ -171,11 +225,19 @@ fn build_options(args: &ImageArgs, tty: bool) -> Result<ImageOptions, Box<dyn st
     };
     Ok(ImageOptions {
         chunk_size: parse_size(&args.block_size)?,
+        skip_size_max: if args.no_skip {
+            0
+        } else {
+            parse_size(&args.skip_size)?
+        },
+        probe_size_max: parse_size(&args.probe_size)?,
         sector_size,
         retries: args.retries,
         trim: !args.no_trim,
         scrape: !args.no_scrape,
         retry: !args.no_retry,
+        retry_only: args.retry_only,
+        reset_bad: args.reset_bad,
         // 端末でなければ 1 行ずつ流れるので、頻度を落とす。
         progress_interval: if tty {
             Duration::from_millis(100)
@@ -184,6 +246,58 @@ fn build_options(args: &ImageArgs, tty: bool) -> Result<ImageOptions, Box<dyn st
         },
         ..ImageOptions::default()
     })
+}
+
+/// デバイスが応答しなくなったときの受け答え(PLAN.md 11.3)。
+///
+/// 固まったコントローラは電源を入れ直す以外に戻らないので、抜き差しを頼んで待つ。
+/// 抜かれたことを確かめてから、挿し直されるのを待つ(応答しないだけで OS からは
+/// 見えたままのことが多く、それを「戻った」と誤解すると同じ所で固まるため)。
+fn stall_handler(
+    info: DeviceInfo,
+    wait_timeout: Duration,
+    cancel: Arc<AtomicBool>,
+    tty: bool,
+) -> impl FnMut(&ofr_image::Stall) -> StallAction + Send + 'static {
+    move |stall| {
+        let mut err = std::io::stderr();
+        if tty {
+            // 進捗行を書きかけのまま残さない。
+            let _ = writeln!(err);
+        }
+        let _ = writeln!(
+            err,
+            "デバイスが応答しない({} 回目)。メディアをいったん抜いて、数秒おいてから挿し直すこと。",
+            stall.attempt
+        );
+        let _ = writeln!(
+            err,
+            "  {} まで待つ。中断するなら Ctrl-C。",
+            format::duration(wait_timeout)
+        );
+        let _ = err.flush();
+
+        let back = ofr_core::replug::wait_for_replug(&info, wait_timeout, &cancel, |state| {
+            let mut err = std::io::stderr();
+            let line = match state {
+                ReplugState::WaitingInsertion => {
+                    "  デバイスが外れた。挿し直すのを待っている...".to_string()
+                }
+                ReplugState::Back(id) => format!("  {id} が戻った。続きから読み直す。"),
+                ReplugState::TimedOut => "  待ったが戻ってこないので打ち切る。".to_string(),
+                ReplugState::Cancelled => "  中断された。".to_string(),
+                _ => return,
+            };
+            let _ = writeln!(err, "{line}");
+            let _ = err.flush();
+        });
+
+        if back.is_some() {
+            StallAction::Resume
+        } else {
+            StallAction::Abort
+        }
+    }
 }
 
 /// 進捗表示。端末なら 1 行を書き換え、そうでなければ 1 行ずつ追記する。
@@ -233,6 +347,15 @@ fn print_summary(summary: &ImageSummary, map_path: Option<&Path>) {
     println!("不良:   {}", format::bytes(summary.bad));
     println!("未取得: {}", format::bytes(summary.remaining));
     println!("エラー: {} 回", summary.errors);
+    if summary.timeouts > 0 {
+        println!(
+            "応答なし: {} 回(制限時間で見捨てた読み込み)",
+            summary.timeouts
+        );
+    }
+    if summary.stalls > 0 {
+        println!("抜き差し待ち: {} 回", summary.stalls);
+    }
     if summary.reopens > 0 {
         println!("開き直し: {} 回", summary.reopens);
     }
@@ -245,6 +368,13 @@ fn print_summary(summary: &ImageSummary, map_path: Option<&Path>) {
         println!();
         println!("読めない領域が残っている。時間をおいて同じコマンドを実行すると、");
         println!("mapfile の不良領域だけを再試行する(--retries で回数を増やせる)。");
+        if summary.timeouts > 0 {
+            println!("応答が返らなくなった読み込みがある。メディアを抜き差ししてから");
+            println!("再開すると、コントローラが復帰して読めることがある。");
+        }
+        println!(
+            "読めなかった所だけを狙うなら --retry-only、記録を捨ててやり直すなら --reset-bad。"
+        );
         if let Some(p) = map_path {
             println!("不良領域の一覧: {}", p.display());
         }

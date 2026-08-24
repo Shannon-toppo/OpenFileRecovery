@@ -152,6 +152,15 @@ pub trait Device: Send + Sync {
     fn reopen(&self) -> Result<bool> {
         Ok(false)
     }
+
+    /// 外から手当てして復帰したことを伝える(PLAN.md 11.3)。
+    ///
+    /// メディアの抜き差しで電源が入り直したときに呼ぶ。[`Device::reopen`] と違い、
+    /// 「デバイスが応答しない」という打ち切り判断そのものをやり直させる意味を持つ。
+    /// 開き直しに意味がないバックエンドは `Ok(false)` を返す。
+    fn recovered(&self) -> Result<bool> {
+        self.reopen()
+    }
 }
 
 impl<D: Device + ?Sized> Device for &D {
@@ -169,6 +178,9 @@ impl<D: Device + ?Sized> Device for &D {
     }
     fn reopen(&self) -> Result<bool> {
         (**self).reopen()
+    }
+    fn recovered(&self) -> Result<bool> {
+        (**self).recovered()
     }
 }
 
@@ -188,6 +200,9 @@ impl<D: Device + ?Sized> Device for Box<D> {
     fn reopen(&self) -> Result<bool> {
         (**self).reopen()
     }
+    fn recovered(&self) -> Result<bool> {
+        (**self).recovered()
+    }
 }
 
 impl<D: Device + ?Sized> Device for std::sync::Arc<D> {
@@ -205,6 +220,9 @@ impl<D: Device + ?Sized> Device for std::sync::Arc<D> {
     }
     fn reopen(&self) -> Result<bool> {
         (**self).reopen()
+    }
+    fn recovered(&self) -> Result<bool> {
+        (**self).recovered()
     }
 }
 

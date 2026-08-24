@@ -87,8 +87,15 @@ pub struct ImageSummary {
     pub remaining: u64,
     /// 読み込みエラーの回数。
     pub errors: u64,
+    /// 応答が返らず見捨てた読み込みの回数(PLAN.md 11.2)。
+    ///
+    /// [`errors`](Self::errors) にも含まれる。不良セクタと、コントローラが
+    /// 固まって返ってこないメディアを取り違えないために分けて数える。
+    pub timeouts: u64,
     /// デバイスハンドルを開き直した回数。
     pub reopens: u32,
+    /// デバイスが応答しなくなって足踏みした回数(PLAN.md 11.3)。
+    pub stalls: u32,
     /// 所要時間。
     pub elapsed: Duration,
     /// キャンセルで打ち切ったか。
@@ -112,7 +119,9 @@ impl ImageSummary {
     pub(crate) fn from_blocks(
         blocks: &BlockList,
         errors: u64,
+        timeouts: u64,
         reopens: u32,
+        stalls: u32,
         elapsed: Duration,
         cancelled: bool,
     ) -> Self {
@@ -122,7 +131,9 @@ impl ImageSummary {
             bad: blocks.bytes_with(crate::blocks::BlockStatus::BadSector),
             remaining: blocks.remaining(),
             errors,
+            timeouts,
             reopens,
+            stalls,
             elapsed,
             cancelled,
         }
@@ -131,3 +142,33 @@ impl ImageSummary {
 
 /// 進捗コールバック。
 pub type ProgressFn = Box<dyn FnMut(&Progress) + Send>;
+
+/// デバイスが応答しなくなり、これ以上進めなくなった状況(PLAN.md 11.3)。
+///
+/// 固まったコントローラは電源を入れ直す以外に復帰の手がない。ソフトからは
+/// USB の電源を切れないので、**人の手を電源スイッチとして使う**。
+/// この知らせを受けた側が「抜き差ししてください」と出し、戻ってくるのを待つ。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Stall {
+    /// 何度目の足踏みか(1 始まり)。
+    pub attempt: u32,
+    /// 足踏みした位置。
+    pub position: u64,
+    /// これまでに見捨てた読み込みの回数。
+    pub timeouts: u64,
+}
+
+/// 足踏みしたあとどうするか。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StallAction {
+    /// デバイスが戻ってきたので続ける。同じ範囲をもう一度読み直す。
+    Resume,
+    /// 打ち切る。
+    Abort,
+}
+
+/// 足踏みしたときに呼ばれるコールバック。
+///
+/// 戻るまで待つ処理(抜き差しの検知)は呼ばれた側の仕事。ここでブロックしてよい。
+pub type StallFn = Box<dyn FnMut(&Stall) -> StallAction + Send>;
