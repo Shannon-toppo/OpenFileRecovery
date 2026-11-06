@@ -59,7 +59,10 @@
   // カービング
   let carveOutput = $state("");
   let align = $state(512);
-  const allFormats = ["jpeg", "png", "gif", "heic", "mp4", "mov", "avi", "wav", "mp3", "zip", "pdf"];
+  const allFormats = [
+    "jpeg", "png", "gif", "webp", "heic", "avif", "cr3",
+    "mp4", "mov", "avi", "wav", "mp3", "m4a", "zip", "pdf",
+  ];
   let formats = $state<string[]>([]);
 
   let ready = $derived(

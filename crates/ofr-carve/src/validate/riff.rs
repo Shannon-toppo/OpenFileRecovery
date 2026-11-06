@@ -1,4 +1,4 @@
-//! RIFF(AVI / WAV)のバリデータ。
+//! RIFF(AVI / WAV / WebP)のバリデータ。
 //!
 //! RIFF はヘッダ(`RIFF` + サイズ + フォーム種別)にファイル全体の長さが
 //! 入っているので、終端はそこから直接求まる。サイズが壊れている場合に備えて
@@ -20,6 +20,7 @@ pub(crate) fn probe(r: &mut Reader<'_>, start: u64, limit: u64) -> Option<Candid
     let (format, ext) = match &form {
         b"AVI " | b"AVIX" => (FileFormat::Avi, "avi"),
         b"WAVE" => (FileFormat::Wav, "wav"),
+        b"WEBP" => (FileFormat::Webp, "webp"),
         _ => return None,
     };
     // RIFF ヘッダ 8 バイト + フォーム種別 4 バイトが最小。
@@ -47,7 +48,8 @@ pub(crate) fn probe(r: &mut Reader<'_>, start: u64, limit: u64) -> Option<Candid
 
 /// チャンク列を歩いて、綺麗に並んでいた最後の位置を返す。
 ///
-/// ついでに AVI なら `avih`、WAV なら `fmt ` / `data` からメタデータを拾う。
+/// ついでに AVI なら `avih`、WAV なら `fmt ` / `data`、WebP なら画像チャンクから
+/// メタデータを拾う。
 fn walk_chunks(
     r: &mut Reader<'_>,
     from: u64,
@@ -86,6 +88,9 @@ fn walk_chunks(
             b"data" if format == FileFormat::Wav => {
                 data_size = Some(size);
             }
+            b"VP8X" | b"VP8L" | b"VP8 " if format == FileFormat::Webp && meta.width.is_none() => {
+                read_webp_size(r, &tag, body, meta);
+            }
             _ => {}
         }
         // チャンクは 2 バイト境界に揃うので、奇数長なら 1 バイトのパディングが入る。
@@ -116,5 +121,37 @@ fn read_avih(r: &mut Reader<'_>, at: u64, meta: &mut FileMetadata) {
         && frames > 0
     {
         meta.duration_ms = Some(u64::from(us) * u64::from(frames) / 1000);
+    }
+}
+
+/// WebP の画像チャンクから寸法を拾う。
+///
+/// 拡張形式(`VP8X`)ならキャンバス寸法、単体の画像なら
+/// 可逆(`VP8L`)/非可逆(`VP8 `)のビットストリーム先頭から読む。
+fn read_webp_size(r: &mut Reader<'_>, tag: &[u8; 4], body: u64, meta: &mut FileMetadata) {
+    let u24le = |b: [u8; 3]| u32::from(b[0]) | u32::from(b[1]) << 8 | u32::from(b[2]) << 16;
+    let size = match tag {
+        // フラグ 1 バイト + 予約 3 バイトのあと、幅-1 と高さ-1 が 24 ビットずつ。
+        b"VP8X" => r
+            .array::<3>(body + 4)
+            .zip(r.array::<3>(body + 7))
+            .map(|(w, h)| (u24le(w) + 1, u24le(h) + 1)),
+        // 署名 0x2F のあと、幅-1 と高さ-1 が 14 ビットずつ詰めて入る。
+        b"VP8L" if r.u8(body) == Some(0x2F) => r
+            .u32le(body + 1)
+            .map(|v| ((v & 0x3FFF) + 1, ((v >> 14) & 0x3FFF) + 1)),
+        // フレームタグ 3 バイト + 開始コード 9D 01 2A のあと、14 ビットの幅と高さ。
+        b"VP8 " if r.matches(body + 3, &[0x9D, 0x01, 0x2A]) => r
+            .u16le(body + 6)
+            .zip(r.u16le(body + 8))
+            .map(|(w, h)| (u32::from(w & 0x3FFF), u32::from(h & 0x3FFF))),
+        _ => None,
+    };
+    if let Some((w, h)) = size
+        && w > 0
+        && h > 0
+    {
+        meta.width = Some(w);
+        meta.height = Some(h);
     }
 }

@@ -210,7 +210,7 @@ sudo ofr image /dev/disk4 usb.img --retry-only --retries 10 --verify 3
 デバイスからの最終手段。FS を一切見ず、デバイスを先頭から走査してファイル形式の
 マジックバイトを探し、ヘッダのサイズ情報や終端マーカーから境界を計算して切り出す。
 
-対応形式: JPEG, PNG, GIF, HEIC, MP4/MOV, AVI, WAV, MP3, ZIP (docx/xlsx/pptx を含む), PDF。
+対応形式: JPEG, PNG, GIF, WebP, HEIC, AVIF, CR3 (Canon RAW), MP4/MOV, AVI, WAV, MP3, M4A, ZIP (docx/xlsx/pptx を含む), PDF。
 
 **元のファイル名は復元できない。** ディレクトリ情報を見ないので原理的に無理で、
 名前は連番になる。Exif (JPEG) や `mvhd` (MP4) から撮影日時を拾えたものは

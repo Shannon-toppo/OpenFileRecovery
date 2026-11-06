@@ -334,6 +334,56 @@ pub fn avi(width: u32, height: u32, frames: u32) -> Vec<u8> {
     riff(&body)
 }
 
+/// WebP。`VP8X` + `VP8L` の拡張形式。寸法は VP8X のキャンバスから読む。
+pub fn webp_extended(width: u32, height: u32) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"WEBP");
+
+    body.extend_from_slice(b"VP8X");
+    push_u32le(&mut body, 10);
+    body.extend_from_slice(&[0x10, 0, 0, 0]); // フラグ(アルファあり)+ 予約
+    body.extend_from_slice(&(width - 1).to_le_bytes()[..3]);
+    body.extend_from_slice(&(height - 1).to_le_bytes()[..3]);
+
+    push_vp8l(&mut body, width, height, 301); // 奇数長でパディングも試す
+    riff(&body)
+}
+
+/// WebP。`VP8L`(可逆)単体の単純形式。
+pub fn webp_lossless(width: u32, height: u32) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(b"WEBP");
+    push_vp8l(&mut body, width, height, 512);
+    riff(&body)
+}
+
+/// WebP。`VP8 `(非可逆)単体の単純形式。
+pub fn webp_lossy(width: u16, height: u16) -> Vec<u8> {
+    let mut data = vec![0x10, 0x02, 0x00, 0x9D, 0x01, 0x2A];
+    push_u16le(&mut data, width);
+    push_u16le(&mut data, height);
+    data.extend_from_slice(&filler(700, 0x57));
+
+    let mut body = Vec::new();
+    body.extend_from_slice(b"WEBP");
+    body.extend_from_slice(b"VP8 ");
+    push_u32le(&mut body, data.len() as u32);
+    body.extend_from_slice(&data);
+    riff(&body)
+}
+
+fn push_vp8l(body: &mut Vec<u8>, width: u32, height: u32, len: usize) {
+    let mut data = vec![0x2F];
+    push_u32le(&mut data, (width - 1) | (height - 1) << 14);
+    data.extend_from_slice(&filler(len - data.len(), 0x4C));
+    body.extend_from_slice(b"VP8L");
+    push_u32le(body, data.len() as u32);
+    body.extend_from_slice(&data);
+    if data.len() % 2 == 1 {
+        body.push(0);
+    }
+}
+
 fn riff(body: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(b"RIFF");
@@ -360,6 +410,26 @@ pub fn mov(payload: usize) -> Vec<u8> {
 /// HEIC(ブランド `heic`)。meta ボックスを持つ。
 pub fn heic(payload: usize) -> Vec<u8> {
     isobmff(b"heic", &[b"mif1", b"heic"], payload, true)
+}
+
+/// AVIF(ブランド `avif`)。
+pub fn avif(payload: usize) -> Vec<u8> {
+    isobmff(b"avif", &[b"avif", b"mif1", b"miaf"], payload, true)
+}
+
+/// 主ブランドが HEIF 共通の `mif1` で、互換ブランドに `avif` がある AVIF。
+pub fn avif_generic_brand(payload: usize) -> Vec<u8> {
+    isobmff(b"mif1", &[b"mif1", b"avif", b"miaf"], payload, true)
+}
+
+/// Canon CR3(ブランド `crx `)。
+pub fn cr3(payload: usize) -> Vec<u8> {
+    isobmff(b"crx ", &[b"crx ", b"isom"], payload, false)
+}
+
+/// M4A(ブランド `M4A `)。
+pub fn m4a(payload: usize) -> Vec<u8> {
+    isobmff(b"M4A ", &[b"M4A ", b"mp42", b"isom"], payload, false)
 }
 
 fn isobmff(brand: &[u8; 4], compatible: &[&[u8; 4]], payload: usize, meta: bool) -> Vec<u8> {

@@ -1,11 +1,15 @@
-//! ISO-BMFF(MP4 / MOV / HEIC)のバリデータ。
+//! ISO-BMFF(MP4 / MOV / M4A / HEIC / AVIF / CR3)のバリデータ。
 //!
 //! ISO-BMFF はファイル全体がボックスの列で、各ボックスが自分の長さを持つ。
 //! なので先頭の `ftyp` からボックスを順に足していけば終端は正確に出る
 //! (PLAN.md 5.4「ヘッダ内のサイズ情報を辿って正確な終端を計算する」)。
 //!
 //! 種別は `ftyp` のブランドで決める。`qt  ` なら MOV、`heic` 系なら HEIC、
+//! `avif` 系なら AVIF、`crx ` なら Canon の CR3、`M4A ` 系なら M4A、
 //! それ以外の既知ブランドは MP4 系として扱う。
+//!
+//! `mif1` / `msf1` は HEIF 共通のブランドで、HEIC と AVIF のどちらにも付く。
+//! 主ブランドがこれだけのときは互換ブランド欄に具体的なものがないかも見る。
 
 use crate::format::{FileFormat, FileMetadata, Timestamp};
 use crate::reader::Reader;
@@ -29,19 +33,27 @@ pub(crate) fn probe(r: &mut Reader<'_>, start: u64, limit: u64) -> Option<Candid
         return None;
     }
     let brand = r.array::<4>(start + 8)?;
-    let (format, ext) = brand_to_format(&brand).or_else(|| {
-        // 主ブランドが未知でも、互換ブランド欄に既知のものがあれば拾う。
-        let mut at = start + 16;
-        while at + 4 <= start + ftyp_size {
-            if let Some(b) = r.array::<4>(at)
-                && let Some(hit) = brand_to_format(&b)
-            {
-                return Some(hit);
+    let major = brand_to_format(&brand);
+    let (format, ext) = match major {
+        Some(hit) if !is_generic_heif(&brand) => hit,
+        // 主ブランドが未知か HEIF 共通のものなら、互換ブランド欄から
+        // 具体的なものを探す。見つからなければ主ブランドの判定に従う。
+        _ => {
+            let mut found = None;
+            let mut at = start + 16;
+            while at + 4 <= start + ftyp_size {
+                if let Some(b) = r.array::<4>(at)
+                    && !is_generic_heif(&b)
+                    && let Some(hit) = brand_to_format(&b)
+                {
+                    found = Some(hit);
+                    break;
+                }
+                at += 4;
             }
-            at += 4;
+            found.or(major)?
         }
-        None
-    })?;
+    };
 
     let mut meta = FileMetadata::default();
     let mut pos = start;
@@ -119,13 +131,21 @@ fn brand_to_format(brand: &[u8; 4]) -> Option<(FileFormat, &'static str)> {
         b"heic" | b"heix" | b"heim" | b"heis" | b"hevc" | b"hevx" | b"mif1" | b"msf1" => {
             (FileFormat::Heic, "heic")
         }
-        b"M4A " => (FileFormat::Mp4, "m4a"),
+        b"avif" | b"avis" => (FileFormat::Avif, "avif"),
+        b"crx " => (FileFormat::Cr3, "cr3"),
+        b"M4A " => (FileFormat::M4a, "m4a"),
+        b"M4B " => (FileFormat::M4a, "m4b"),
         b"M4V " => (FileFormat::Mp4, "m4v"),
         b"isom" | b"iso2" | b"iso4" | b"iso5" | b"iso6" | b"mp41" | b"mp42" | b"avc1" | b"mmp4"
         | b"dash" | b"MSNV" | b"M4P " => (FileFormat::Mp4, "mp4"),
         b"3gp4" | b"3gp5" | b"3gp6" | b"3gp7" | b"3g2a" => (FileFormat::Mp4, "3gp"),
         _ => return None,
     })
+}
+
+/// HEIC にも AVIF にも付く、HEIF 共通のブランドか。
+fn is_generic_heif(brand: &[u8; 4]) -> bool {
+    matches!(brand, b"mif1" | b"msf1")
 }
 
 /// 指定範囲の直下から名前の一致するボックスを探す。
