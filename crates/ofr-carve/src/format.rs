@@ -5,7 +5,7 @@ use std::fmt;
 /// カービングが認識するファイル形式。
 ///
 /// 拡張子は形式だけでは決まらない(ZIP は docx にも xlsx にもなり、
-/// ISO-BMFF は mp4 / mov / heic に分かれる)ので、実際の拡張子は
+/// MP4 は mp4 / m4v / 3gp に分かれる)ので、実際の拡張子は
 /// [`CarvedFile::extension`](crate::CarvedFile::extension) が持つ。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
@@ -16,8 +16,14 @@ pub enum FileFormat {
     Png,
     /// GIF 画像。
     Gif,
+    /// WebP 画像(RIFF)。
+    Webp,
     /// HEIF / HEIC 画像(ISO-BMFF)。
     Heic,
+    /// AVIF 画像(ISO-BMFF)。
+    Avif,
+    /// Canon RAW 画像(ISO-BMFF の CR3)。
+    Cr3,
     /// MP4 動画(ISO-BMFF)。
     Mp4,
     /// QuickTime 動画(ISO-BMFF)。
@@ -28,6 +34,8 @@ pub enum FileFormat {
     Wav,
     /// MP3 音声。
     Mp3,
+    /// M4A 音声(ISO-BMFF。AAC / ALAC)。
+    M4a,
     /// ZIP 書庫(docx / xlsx / pptx を含む)。
     Zip,
     /// PDF 文書。
@@ -41,12 +49,16 @@ impl FileFormat {
             FileFormat::Jpeg => "jpg",
             FileFormat::Png => "png",
             FileFormat::Gif => "gif",
+            FileFormat::Webp => "webp",
             FileFormat::Heic => "heic",
+            FileFormat::Avif => "avif",
+            FileFormat::Cr3 => "cr3",
             FileFormat::Mp4 => "mp4",
             FileFormat::Mov => "mov",
             FileFormat::Avi => "avi",
             FileFormat::Wav => "wav",
             FileFormat::Mp3 => "mp3",
+            FileFormat::M4a => "m4a",
             FileFormat::Zip => "zip",
             FileFormat::Pdf => "pdf",
         }
@@ -67,12 +79,16 @@ impl FileFormat {
             FileFormat::Jpeg,
             FileFormat::Png,
             FileFormat::Gif,
+            FileFormat::Webp,
             FileFormat::Heic,
+            FileFormat::Avif,
+            FileFormat::Cr3,
             FileFormat::Mp4,
             FileFormat::Mov,
             FileFormat::Avi,
             FileFormat::Wav,
             FileFormat::Mp3,
+            FileFormat::M4a,
             FileFormat::Zip,
             FileFormat::Pdf,
         ]
@@ -85,12 +101,16 @@ impl FileFormat {
             "jpeg" | "jpg" | "jpe" => FileFormat::Jpeg,
             "png" => FileFormat::Png,
             "gif" => FileFormat::Gif,
+            "webp" => FileFormat::Webp,
             "heic" | "heif" => FileFormat::Heic,
-            "mp4" | "m4v" | "m4a" | "3gp" => FileFormat::Mp4,
+            "avif" => FileFormat::Avif,
+            "cr3" => FileFormat::Cr3,
+            "mp4" | "m4v" | "3gp" => FileFormat::Mp4,
             "mov" | "qt" => FileFormat::Mov,
             "avi" => FileFormat::Avi,
             "wav" | "wave" => FileFormat::Wav,
             "mp3" => FileFormat::Mp3,
+            "m4a" | "m4b" => FileFormat::M4a,
             "zip" | "docx" | "xlsx" | "pptx" => FileFormat::Zip,
             "pdf" => FileFormat::Pdf,
             _ => return None,
@@ -100,9 +120,15 @@ impl FileFormat {
     /// 出力を種類別フォルダに分けるときのフォルダ名。
     pub fn category(self) -> &'static str {
         match self {
-            FileFormat::Jpeg | FileFormat::Png | FileFormat::Gif | FileFormat::Heic => "画像",
+            FileFormat::Jpeg
+            | FileFormat::Png
+            | FileFormat::Gif
+            | FileFormat::Webp
+            | FileFormat::Heic
+            | FileFormat::Avif
+            | FileFormat::Cr3 => "画像",
             FileFormat::Mp4 | FileFormat::Mov | FileFormat::Avi => "動画",
-            FileFormat::Wav | FileFormat::Mp3 => "音声",
+            FileFormat::Wav | FileFormat::Mp3 | FileFormat::M4a => "音声",
             FileFormat::Zip | FileFormat::Pdf => "文書",
         }
     }
@@ -336,6 +362,8 @@ mod tests {
             assert_eq!(FileFormat::from_name(f.default_extension()), Some(*f));
         }
         assert_eq!(FileFormat::from_name(".DOCX"), Some(FileFormat::Zip));
+        assert_eq!(FileFormat::from_name("m4b"), Some(FileFormat::M4a));
+        assert_eq!(FileFormat::from_name("CR3"), Some(FileFormat::Cr3));
         assert_eq!(FileFormat::from_name("tiff"), None);
     }
 }

@@ -60,12 +60,19 @@ fn sample_set() -> Vec<(&'static str, Vec<u8>)> {
         ("jpeg-plain", support::jpeg(640, 480, false)),
         ("png", support::png(800, 600)),
         ("gif", support::gif(320, 240)),
+        ("webp-extended", support::webp_extended(1024, 768)),
+        ("webp-lossless", support::webp_lossless(300, 200)),
+        ("webp-lossy", support::webp_lossy(640, 360)),
         ("mp4", support::mp4(4096)),
         ("mov", support::mov(2048)),
         ("heic", support::heic(3000)),
+        ("avif", support::avif(2500)),
+        ("avif-mif1", support::avif_generic_brand(1500)),
+        ("cr3", support::cr3(5000)),
         ("avi", support::avi(1280, 720, 8)),
         ("wav", support::wav(2000)),
         ("mp3", support::mp3(12)),
+        ("m4a", support::m4a(1800)),
         ("docx", support::docx()),
         (
             "zip",
@@ -177,6 +184,16 @@ fn identifies_formats_and_extensions() {
     assert_eq!(by_name("wav").format, FileFormat::Wav);
     assert_eq!(by_name("mp3").format, FileFormat::Mp3);
     assert_eq!(by_name("pdf").format, FileFormat::Pdf);
+    assert_eq!(by_name("webp-lossy").format, FileFormat::Webp);
+    assert_eq!(by_name("avif").format, FileFormat::Avif);
+    assert_eq!(by_name("cr3").format, FileFormat::Cr3);
+    assert_eq!(by_name("m4a").format, FileFormat::M4a);
+
+    // HEIF 共通ブランドが主でも、互換ブランドから AVIF と分かる。
+    assert_eq!(by_name("avif-mif1").format, FileFormat::Avif);
+    assert_eq!(by_name("avif-mif1").extension, "avif");
+    assert_eq!(by_name("cr3").extension, "cr3");
+    assert_eq!(by_name("m4a").extension, "m4a");
 
     // ZIP は中身で拡張子が変わる。
     assert_eq!(by_name("docx").format, FileFormat::Zip);
@@ -232,6 +249,17 @@ fn extracts_metadata_and_names_files_by_capture_time() {
     assert_eq!(by_name("png").metadata.width, Some(800));
     assert_eq!(by_name("gif").metadata.height, Some(240));
     assert_eq!(by_name("avi").metadata.width, Some(1280));
+    for (name, w, h) in [
+        ("webp-extended", 1024, 768),
+        ("webp-lossless", 300, 200),
+        ("webp-lossy", 640, 360),
+    ] {
+        let meta = &by_name(name).metadata;
+        assert_eq!((meta.width, meta.height), (Some(w), Some(h)), "{name}");
+    }
+    // M4A と CR3 も mvhd から撮影日時と長さを拾う。
+    assert_eq!(by_name("m4a").metadata.duration_ms, Some(5000));
+    assert!(by_name("cr3").file_name.starts_with("20230415-142530_"));
     assert_eq!(by_name("wav").metadata.duration_ms, Some(45)); // 8000 バイト / 176400
     assert_eq!(by_name("mp3").metadata.duration_ms, Some(313)); // 12 * 1152 / 44100
     assert_eq!(
